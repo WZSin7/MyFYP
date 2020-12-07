@@ -1,0 +1,10 @@
+<?xml version="1.0"?>
+<launch>
+  <node name="vocus2" pkg="vocus2_ros" type="vocus2_ros_node" output="screen">
+  	<arg name="image_in" default="/darknet_ros/detection_image"/>
+  	<arg name="image_out" default="most_salient_region"/>
+  	<param name="image_in" value="/darknet_ros/detection_image"/>
+  	<param name="image_out" value="most_salient_region"/>
+  </node>
+
+</launch>

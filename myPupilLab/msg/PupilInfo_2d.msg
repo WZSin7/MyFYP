@@ -1,0 +1,11 @@
+std_msgs/Header header
+float32 confidence
+float32 timestamp
+float32[] ellipse_center
+float32[] ellipse_axes
+float32 ellipse_angle
+float32[] location
+float32 diameter
+float32[] norm_pos
+uint32 id
+string method
