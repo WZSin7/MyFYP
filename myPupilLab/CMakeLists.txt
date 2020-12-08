@@ -56,6 +56,7 @@ find_package(catkin REQUIRED COMPONENTS
    GazeInfoBino.msg
    GazeInfoMono.msg
    WorldCameraImage.msg
+   GazeInfoBino_Array.msg
  )
 
 ## Generate services in the 'srv' folder

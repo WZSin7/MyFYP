@@ -2,8 +2,10 @@
 import zmq
 import msgpack
 import rospy
+import std_msgs.msg
 from myPupilLab.msg import GazeInfoMono
 from myPupilLab.msg import GazeInfoBino
+from myPupilLab.msg import GazeInfoBino_Array
 # from std_msgs.msg import String
 
 ctx = zmq.Context()
@@ -30,6 +32,8 @@ subscriber.subscribe('gaze.')  # receive pupil info, 'gaze.' is also valid but n
 
 pub_gaze_bino = rospy.Publisher('gaze_info_bino',GazeInfoBino,queue_size=10) #Node name, message type
 pub_gaze_mono = rospy.Publisher('gaze_info_mono',GazeInfoMono,queue_size=10)
+pub_gaze_bino_30 = rospy.Publisher('gaze_array',GazeInfoBino_Array,queue_size=1)
+
 def gaze_parser_bino(message):
 	#Parse gazeInfo into a message.
 	if len(message) < 1: return -1 
@@ -44,6 +48,8 @@ def gaze_parser_bino(message):
 	outmsg.norm_pos = message[b'norm_pos']
 	outmsg.confidence = message[b'confidence']
 	outmsg.timestamp = message[b'timestamp']
+	x_pos.append(outmsg.norm_pos[0])
+	y_pos.append(outmsg.norm_pos[1])
 
 	return outmsg
 
@@ -59,7 +65,17 @@ def gaze_parser_mono(message):
 	outmsg.norm_pos = message[b'norm_pos']
 	outmsg.confidence = message[b'confidence']
 	outmsg.timestamp = message[b'timestamp']
+	x_pos.append(outmsg.norm_pos[0])
+	y_pos.append(outmsg.norm_pos[1])
 	return outmsg
+
+def pub_array():
+	outmsg = GazeInfoBino_Array()
+	outmsg.x = x_pos
+	outmsg.y = y_pos
+	outmsg.header.stamp = rospy.Time.now()
+	pub_gaze_bino_30.publish(outmsg)
+
 
 if __name__ == "__main__":
 	rospy.loginfo("Starting gaze publisher.")
@@ -68,6 +84,9 @@ if __name__ == "__main__":
 	rospy.init_node('gazePublisher')
 
 	print("listening for socket message....")
+	x_pos = []
+	y_pos = []
+	count = 0
 	while not rospy.is_shutdown():
 		topic, payload = subscriber.recv_multipart()
 		message = msgpack.loads(payload)
@@ -78,11 +97,25 @@ if __name__ == "__main__":
 				rospy.loginfo(outmsg.confidence)
 				rospy.loginfo(outmsg.norm_pos) 
 				pub_gaze_bino.publish(outmsg)
-		# elif topic == b'gaze.3d.0.' or topic == b'gaze.3d.1.': #Monoocular gaze datum, will always output
+				count +=1
+				print(count)
+				if count == 30:	
+					pub_array()
+					count = 0
+					x_pos.clear()
+					y_pos.clear()
+		# elif topic == b'gaze.3d.0.' or topic == b'gaze.3d.1.':
 		# 	outmsg = gaze_parser_mono(message)
 		# 	if not outmsg == -1:
 		# 		rospy.loginfo("Mono")
 		# 		rospy.loginfo(outmsg.confidence)
 		# 		rospy.loginfo(outmsg.norm_pos) 
 		# 		pub_gaze_mono.publish(outmsg)
+		# 		count +=1
+		# 		print(count)
+		# 		if count == 30:	
+		# 			pub_array()
+		# 			count = 0
+		# 			x_pos.clear()
+		# 			y_pos.clear()
 
