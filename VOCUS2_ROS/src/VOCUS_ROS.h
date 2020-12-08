@@ -13,6 +13,7 @@
 // darknet_ros_msgs
 #include <vocus2_ros/BoundingBox.h>
 #include <vocus2_ros/BoundingBoxes.h>
+#include <vocus2_ros/GazeInfoBino_Array.h>
 #include <message_filters/subscriber.h>
 #include <message_filters/time_synchronizer.h>
 #include <message_filters/sync_policies/exact_time.h>
@@ -47,16 +48,14 @@ public:
   void setVOCUSConfigFromROSConfig(VOCUS2_Cfg& vocus_cfg, const vocus2_ros::vocus2_rosConfig &config);
 
     // callback that is called when a new image is published to the topic
-  void imageCb(const sensor_msgs::ImageConstPtr& msg, const vocus2_ros::BoundingBoxesConstPtr& mybboxes);
+  void imageCb(const sensor_msgs::ImageConstPtr& msg, const vocus2_ros::BoundingBoxesConstPtr& mybboxes, const vocus2_ros::GazeInfoBino_ArrayConstPtr& myarray);
   
-  void imageCb2(const sensor_msgs::ImageConstPtr& msg, const vocus2_ros::BoundingBoxesConstPtr& mybboxes);
+  void imageCb2(const sensor_msgs::ImageConstPtr& msg, const vocus2_ros::BoundingBoxesConstPtr& mybboxes, const vocus2_ros::GazeInfoBino_ArrayConstPtr& myarray);
 
     // callback that is called after the configuration in dynamic_reconfigure has been changed
   void callback(vocus2_ros::vocus2_rosConfig &config, uint32_t level);
 
   //Functions to calc EMD
-  static bool compareIntensity(const values A, const values B);
-
   void sortIntensity(vector<values>& storage);
 
   int getClosest(float val1, float val2, int a, int b, float target);
@@ -80,7 +79,8 @@ private:
   ros::Publisher _poi_pub, _final_verdict_pub;
   message_filters::Subscriber<sensor_msgs::Image> image_sub;
 	message_filters::Subscriber<vocus2_ros::BoundingBoxes> bboxes_sub;
-  typedef message_filters::sync_policies::ApproximateTime<sensor_msgs::Image, vocus2_ros::BoundingBoxes> MySyncPolicy; //Change between 'Approximate' and 'Exact'
+  message_filters::Subscriber<vocus2_ros::GazeInfoBino_Array> array_sub;
+  typedef message_filters::sync_policies::ApproximateTime<sensor_msgs::Image, vocus2_ros::BoundingBoxes, vocus2_ros::GazeInfoBino_Array> MySyncPolicy; //Change between 'Approximate' and 'Exact'
 	typedef message_filters::Synchronizer<MySyncPolicy> Sync;
   boost::shared_ptr<Sync> sync;
 

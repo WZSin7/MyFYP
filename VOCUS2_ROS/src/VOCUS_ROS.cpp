@@ -25,10 +25,10 @@
 
 #include <vocus2_ros/BoundingBox.h>
 #include <vocus2_ros/BoundingBoxes.h>
+#include <vocus2_ros/GazeInfoBino_Array.h>
 #include <opencv2/opencv.hpp>
 #include <random>
 #include "std_msgs/String.h"
-#include <string>
 
 using namespace cv;
 
@@ -42,8 +42,11 @@ VOCUS_ROS::VOCUS_ROS() : _it(_nh) //Constructor [assign '_nh' to '_it']
 	//Added by me
 	image_sub.subscribe(_nh, "/darknet_ros/detection_image", 1);
 	bboxes_sub.subscribe(_nh, "/darknet_ros/bounding_boxes", 1);
-	sync.reset(new Sync(MySyncPolicy(10), image_sub, bboxes_sub));
-	sync->registerCallback(boost::bind(&VOCUS_ROS::imageCb, this, _1, _2));
+	array_sub.subscribe(_nh, "gaze_array", 1);
+	//sync.reset(new Sync(MySyncPolicy(10), image_sub, bboxes_sub));
+	//sync->registerCallback(boost::bind(&VOCUS_ROS::imageCb, this, _1, _2));
+	sync.reset(new Sync(MySyncPolicy(10), image_sub, bboxes_sub, array_sub));
+	sync->registerCallback(boost::bind(&VOCUS_ROS::imageCb, this, _1, _2, _3));
 	//End of added by me
 
 	//_image_sub = _it.subscribe("/usb_cam/image_raw", 1,
@@ -120,11 +123,11 @@ void VOCUS_ROS::setVOCUSConfigFromROSConfig(VOCUS2_Cfg& vocus_cfg, const vocus2_
     cfg_mutex.unlock();
 }
 
-void VOCUS_ROS::imageCb2(const sensor_msgs::ImageConstPtr& msg, const vocus2_ros::BoundingBoxesConstPtr& mybboxes){
+void VOCUS_ROS::imageCb2(const sensor_msgs::ImageConstPtr& msg, const vocus2_ros::BoundingBoxesConstPtr& mybboxes, const vocus2_ros::GazeInfoBino_ArrayConstPtr& myarray){
 	ROS_INFO("Callback working");
 }
 
-void VOCUS_ROS::imageCb(const sensor_msgs::ImageConstPtr& msg, const vocus2_ros::BoundingBoxesConstPtr& mybboxes)
+void VOCUS_ROS::imageCb(const sensor_msgs::ImageConstPtr& msg, const vocus2_ros::BoundingBoxesConstPtr& mybboxes, const vocus2_ros::GazeInfoBino_ArrayConstPtr& myarray)
 {
     //_cam.fromCameraInfo(info_msg);
 	ROS_INFO("callback");
@@ -157,7 +160,7 @@ void VOCUS_ROS::imageCb(const sensor_msgs::ImageConstPtr& msg, const vocus2_ros:
 
 	//Crop Image
 	for (uint i=0; i< mybboxes->bounding_boxes.size(); i++){
-		int xmin = mybboxes->bounding_boxes[i].xmin;
+		int xmin = mybboxes->bounding_boxes[i].xmin; //Top left is origin 
 		int xmax = mybboxes->bounding_boxes[i].xmax;
 		int ymin = mybboxes->bounding_boxes[i].ymin;
 		int ymax = mybboxes->bounding_boxes[i].ymax;
@@ -272,10 +275,10 @@ void VOCUS_ROS::imageCb(const sensor_msgs::ImageConstPtr& msg, const vocus2_ros:
 		std::random_device rd;
 		std::mt19937 gen(rd());
 		float sample, curEMD;
-		int k_pixels = l_pixels*0.2; //User defined
+		int k_pixels = 30; //l_pixels*0.2; //User defined
 		vector<finalValues> hypoGazePoints;
 		vector<int> forEMD, weights,forEMD2;
-		float sumEuclDist=0,meanEuclDist;
+		float sumEuclDist=0,sumEuclDist_gaze = 0, meanEuclDist,meanEuclDist_gaze;
 		std::normal_distribution<float> d(mean, sd);
 		for(int i = 0; i<k_pixels; i++){
 			while(true){
@@ -290,14 +293,16 @@ void VOCUS_ROS::imageCb(const sensor_msgs::ImageConstPtr& msg, const vocus2_ros:
 			temp.col = storage[idx].col;
 			temp.euclideanDistance = calcDistance(temp.row,temp.col,rows/2,cols/2);
 			forEMD.push_back(temp.euclideanDistance);
-			forEMD2.push_back(temp.euclideanDistance+5);
+			forEMD2.push_back(calcDistance(myarray->x[i]*1280-1, myarray->y[i]*720-1, (xmin+xdiff/2), 720-(ymin+ydiff/2))); //Bottom Left is origin[myarray], Top Left is origin[bboxes]
 			weights.push_back(1);
-			sumEuclDist+=temp.euclideanDistance;
+			sumEuclDist+=forEMD[i];
+			sumEuclDist_gaze+=forEMD2[i];
 			hypoGazePoints.push_back(temp);
 		}
-		cout << "First Euclidean Distance: " << hypoGazePoints[0].euclideanDistance << endl;
 		meanEuclDist = sumEuclDist/float(k_pixels);
-		cout << "Average Euclidean Distance: " << meanEuclDist<< endl;
+		meanEuclDist_gaze = sumEuclDist_gaze/float(k_pixels);
+		cout << "Average Euclidean Distance for saliency map: " << meanEuclDist<< endl;
+		cout << "Average Euclidean Distance for gaze points: " << meanEuclDist_gaze<< endl;
 		curEMD = wasserstein(forEMD,weights,forEMD2,weights);
 		cout<< "EMD:" << curEMD << endl;
 
@@ -335,7 +340,7 @@ void VOCUS_ROS::imageCb(const sensor_msgs::ImageConstPtr& msg, const vocus2_ros:
 		}
 
 	}
-	// TODO: Published correct object into final verdict topic
+	//Published correct object into final verdict topic
 	_final_verdict_pub.publish(finalVerdict);
 
 }
@@ -356,12 +361,8 @@ void VOCUS_ROS::callback(vocus2_ros::vocus2_rosConfig &config, uint32_t level)
 	_config = config;
 }
 
-bool VOCUS_ROS::compareIntensity(const values A, const values B){
-	return A.intensity < B.intensity;
-}
-
 void VOCUS_ROS::sortIntensity(vector<values>& storage){ //Ascending order, change compareIntensity form '<' to '>' for descending order
-	sort(storage.begin(),storage.end(), VOCUS_ROS::compareIntensity); //[](const values& A, const values& B){return A.intensity < B.intensity;}
+	sort(storage.begin(),storage.end(), [](const values& A, const values& B){return A.intensity < B.intensity;}); 
 }
 
 int VOCUS_ROS::getClosest(float val1, float val2, int a, int b, float target){ 
