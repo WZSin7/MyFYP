@@ -43,10 +43,10 @@ VOCUS_ROS::VOCUS_ROS() : _it(_nh) //Constructor [assign '_nh' to '_it']
 	image_sub.subscribe(_nh, "/darknet_ros/detection_image", 1);
 	bboxes_sub.subscribe(_nh, "/darknet_ros/bounding_boxes", 1);
 	array_sub.subscribe(_nh, "gaze_array", 1);
-	//sync.reset(new Sync(MySyncPolicy(10), image_sub, bboxes_sub));
-	//sync->registerCallback(boost::bind(&VOCUS_ROS::imageCb, this, _1, _2));
-	sync.reset(new Sync(MySyncPolicy(10), image_sub, bboxes_sub, array_sub));
-	sync->registerCallback(boost::bind(&VOCUS_ROS::imageCb, this, _1, _2, _3));
+	sync.reset(new Sync(MySyncPolicy(10), image_sub, bboxes_sub));
+	sync->registerCallback(boost::bind(&VOCUS_ROS::imageCb2, this, _1, _2));
+	// sync.reset(new Sync(MySyncPolicy(10), image_sub, bboxes_sub, array_sub));
+	// sync->registerCallback(boost::bind(&VOCUS_ROS::imageCb, this, _1, _2, _3));
 	//End of added by me
 
 	//_image_sub = _it.subscribe("/usb_cam/image_raw", 1,
@@ -123,12 +123,286 @@ void VOCUS_ROS::setVOCUSConfigFromROSConfig(VOCUS2_Cfg& vocus_cfg, const vocus2_
     cfg_mutex.unlock();
 }
 
-void VOCUS_ROS::imageCb2(const sensor_msgs::ImageConstPtr& msg, const vocus2_ros::BoundingBoxesConstPtr& mybboxes, const vocus2_ros::GazeInfoBino_ArrayConstPtr& myarray){
-	ROS_INFO("Callback working");
+void VOCUS_ROS::imageCb2(const sensor_msgs::ImageConstPtr& msg, const vocus2_ros::BoundingBoxesConstPtr& mybboxes){
+	//_cam.fromCameraInfo(info_msg);
+	ROS_INFO("callback");
+	cout << "Number of bounding box: " << mybboxes->bounding_boxes.size() << endl;
+    if(RESTORE_DEFAULT) // if the reset checkbox has been ticked, we restore the default configuration
+	{
+		ROS_INFO("RESTORE_DEFAULT");
+		restoreDefaultConfiguration();
+		RESTORE_DEFAULT = false;
+	}
+
+	cv_bridge::CvImagePtr cv_ptr;
+	try //Here
+	{	
+		ROS_INFO("CV_BRIDGE");
+		cv_ptr = cv_bridge::toCvCopy(msg); // Change needed here
+	}
+	catch (cv_bridge::Exception& e)
+	{
+		ROS_ERROR("cv_bridge exception: %s", e.what());
+		return;
+	}
+
+
+	Mat mainImg, img;
+	float minEMD = INFINITY;
+	std_msgs::String finalVerdict;
+        // _cam.rectifyImage(cv_ptr->image, img);
+	mainImg = cv_ptr->image;
+
+	//Crop Image
+	for (uint i=0; i< mybboxes->bounding_boxes.size(); i++){
+		int xmin = mybboxes->bounding_boxes[i].xmin; //Top left is origin 
+		int xmax = mybboxes->bounding_boxes[i].xmax;
+		int ymin = mybboxes->bounding_boxes[i].ymin;
+		int ymax = mybboxes->bounding_boxes[i].ymax;
+		int xdiff = xmax - xmin;
+		int ydiff = ymax - ymin;  
+		img = mainImg(Rect(xmin, ymin, xdiff, ydiff));
+
+		Mat salmap;
+		_vocus.process(img);
+
+		if (TOPDOWN_LEARN == 1)
+		{	
+			ROS_INFO("TOPDOWN");
+			Rect ROI = annotateROI(img);
+
+		//compute feature vector
+			_vocus.td_learn_featurevector(ROI, _cfg.descriptorFile);
+
+		// to turn off learning after we've learned
+		// we disable it in the ros_configuration
+		// and set TOPDOWN_LEARN to -1
+			cfg_mutex.lock();
+			_config.topdown_learn = false;
+			_server.updateConfig(_config);
+			cfg_mutex.unlock();
+			TOPDOWN_LEARN = -1;
+			HAS_LEARNED = true;
+			return;
+		}
+		if (TOPDOWN_SEARCH == 1 && HAS_LEARNED)
+		{
+			double alpha = 0;
+			salmap = _vocus.td_search(alpha);
+			if(_cfg.normalize){
+
+				double mi, ma;
+				minMaxLoc(salmap, &mi, &ma);
+				cout << "saliency map min " << mi << " max " << ma << "\n";
+				salmap = (salmap-mi)/(ma-mi);
+			}
+		}
+		else //Here
+		{
+			salmap = _vocus.compute_salmap();
+			if(COMPUTE_CBIAS)
+				salmap = _vocus.add_center_bias(CENTER_BIAS);
+		}
+		vector<vector<Point>> msrs = computeMSR(salmap,MSR_THRESH, NUM_FOCI);
+
+		for (const auto& msr : msrs)
+		{
+			if (msr.size() < 3000)
+			{ // if the MSR is really large, minEnclosingCircle sometimes runs for more than 10 seconds,
+			// freezing the whole proram. Thus, if it is very large, we 'fall back' to the efficiently
+			// computable bounding rectangle
+				Point2f center;
+				float rad=0;
+				minEnclosingCircle(msr, center, rad);
+				if(rad >= 5 && rad <= max(img.cols, img.rows)){
+					circle(img, center, (int)rad, Scalar(0,0,255), 3);
+				}
+			}
+			else
+			{
+				Rect rect = boundingRect(msr);
+				rectangle(img, rect, Scalar(0,0,255),3);
+			}
+		}
+		
+		//My code
+		vector<values> storage, tempStorage; //tempStorage for all value, storage for only the highest l_pixels values
+		float totalSum = 0, sdSum =0, sd;
+		Size s = salmap.size();
+		int rows = s.height;
+		int cols = s.width;
+		int l_pixels = 4000; //User defined
+		if(l_pixels > rows*cols) l_pixels = rows*cols;
+		cout << "No of rows(y): " << rows << ", No of cols(x): " << cols << endl;
+
+		for (int i = 0; i<rows; ++i){
+			for(int j =0; j<cols; j++){
+				values temp;
+				temp.row = i;
+				temp.col = j;
+				temp.intensity = salmap.at<float>(i,j);
+				tempStorage.push_back(temp);
+			}
+		}
+
+		int totalSize = tempStorage.size()-1;
+		sortIntensity(tempStorage); //Sort in according to the function
+
+		for(int i=totalSize-l_pixels; i<totalSize; i++){
+			storage.push_back(tempStorage[i]);
+			totalSum+=tempStorage[i].intensity;
+		}
+
+		float mean = totalSum/float(l_pixels);
+
+		if(isnan(mean)){
+			cout<< "isnan Error" << endl;
+			return;
+		} 
+
+		for (int i = 0; i<l_pixels; i++){
+			sdSum += pow((storage[i].intensity-mean),2);
+		}
+
+		sd = sqrt(sdSum/l_pixels);
+		cout << "Mean is " << mean << endl;
+		cout << "Standard Deviation is " << sd << endl;
+		cout << "Precentage of l_pixels over bounding boxes:" << float(l_pixels)/float((rows*cols))*100 <<"%" << endl;
+		///////////////////////////////////////////////////
+		// vector<values> storage, tempStorage; //tempStorage for all value, storage for only the highest l_pixels values
+		// float totalSum = 0, sdSum =0, sd;
+		// Size s = salmap.size();
+		// int rows = s.height;
+		// int cols = s.width;
+		// float threshold = 0.8;
+		// //int l_pixels; //User defined
+		// cout << "No of rows(y): " << rows << ", No of cols(x): " << cols << endl;
+
+		// for (int i = 0; i<rows; ++i){
+		// 	for(int j =0; j<cols; j++){
+		// 		values temp;
+		// 		temp.row = i;
+		// 		temp.col = j;
+		// 		temp.intensity = salmap.at<float>(i,j);
+		// 		if(temp.intensity < threshold) continue;
+		// 		tempStorage.push_back(temp);
+		// 	}
+		// }
+
+		// int l_pixels = tempStorage.size();
+		// sortIntensity(tempStorage); //Sort in according to the function
+
+		// for(int i=0; i<l_pixels; i++){
+		// 	storage.push_back(tempStorage[i]);
+		// 	totalSum+=tempStorage[i].intensity;
+		// }
+
+		// float mean = totalSum/float(l_pixels);
+
+		// if(isnan(mean)){
+		// 	cout<< "isnan Error" << endl;
+		// 	return;
+		// } 
+		// for (int i = 0; i<l_pixels; i++){
+		// 	sdSum += pow((storage[i].intensity-mean),2);
+		// }
+
+		// sd = sqrt(sdSum/l_pixels);
+		// cout << "Mean is " << mean << endl;
+		// cout << "Standard Deviation is " << sd << endl;
+		// cout << "Precentage of l_pixels over bounding boxes:" << float(l_pixels)/float((rows*cols))*100 <<"%" << endl;
+
+		//For Gaussian Distrubtion
+		std::random_device rd;
+		std::mt19937 gen(rd());
+		float sample, curEMD;
+		int k_pixels = 30; //l_pixels*0.2; //User defined
+		vector<finalValues> hypoGazePoints;
+		vector<int> forEMD, weights,forEMD2;
+		float sumEuclDist=0,sumEuclDist_gaze = 0, meanEuclDist,meanEuclDist_gaze;
+		std::normal_distribution<float> d(mean, sd);
+		vector<float> ArrayX = {0.57396312,0.5062255,0.49048652,0.53921754,0.47258949,0.48021186,0.43413674,0.54907195,0.53889412,0.46989795,0.55627278,0.501576,0.56955141,0.52339319,0.54355547,0.49963507,0.46193752,0.45237815,0.53322683,0.46883785,0.48874358,0.50336476,0.43106166,0.43499051,0.4628428,0.46909091,0.44935297,0.47186942,0.48096309,0.54941127};
+		vector<float> ArrayY = {};
+		for(int i = 0; i<k_pixels; i++){
+			while(true){
+				sample = d(gen);
+				if(sample >= storage[0].intensity) break; //Retry until obtained intensity >= to min
+			}
+			//cout << "RNG: "<< sample << endl;
+			int idx = findClosestID(storage,l_pixels,sample); //Potential issues
+			//cout << "IDX: " << idx << endl;
+			finalValues temp;
+			temp.row = storage[idx].row;
+			temp.col = storage[idx].col;
+			temp.euclideanDistance = calcDistance(temp.row,temp.col,rows/2,cols/2);
+			cout << "gaussX: " << temp.col << ", gaussY: " << temp.row<< ", centre of BBox X: " <<cols/2<< ", centre of BBox Y: " <<rows/2 << endl;
+			forEMD.push_back(temp.euclideanDistance);
+			//forEMD2.push_back(calcDistance(0.59*1280-1, (1-0.45)*720-1, (xmin+xdiff/2), 720-(ymin+ydiff/2))); //FOR CUP; Bottom Left is origin[myarray], Top Left is origin[bboxes]
+			//forEMD2.push_back(calcDistance(0.67*1280-1, (1-0.39)*720-1, (xmin+xdiff/2), (ymin+ydiff/2))); //FOR KEYBOARD; Bottom Left is origin[myarray], Top Left is origin[bboxes]
+			forEMD2.push_back(calcDistance(ArrayX[i]*1280-1, (1-ArrayY[i])*720-1, (xmin+xdiff/2), (ymin+ydiff/2))); //FOR LAPTOP; Bottom Left is origin[myarray], Top Left is origin[bboxes]
+			//cout << "gazeX: " << ArrayX[i]*1280-1 << ", gazeY: " << (1-ArrayY[i])*720-1 << ", centre of BBox X: " << (xmin+xdiff/2) << ", centre of BBox Y: " << ymin+ydiff/2 << endl;
+			weights.push_back(1);
+			sumEuclDist+=forEMD[i];
+			sumEuclDist_gaze+=forEMD2[i];
+			hypoGazePoints.push_back(temp);
+			cout<< forEMD[i] <<", "<< forEMD2[i]<< endl;
+		}
+		// for (int i=0; i<30; i++){
+		// 	cout << forEMD2[i] << ", ";
+		// }
+		// cout << endl;
+		// for (int i=0; i<30; i++){
+		// 	cout << forEMD[i] << ", ";
+		// }
+		cout << endl;
+		meanEuclDist = sumEuclDist/float(k_pixels);
+		meanEuclDist_gaze = sumEuclDist_gaze/float(k_pixels);
+		cout << "Average Euclidean Distance for saliency map: " << meanEuclDist<< endl;
+		cout << "Average Euclidean Distance for gaze points: " << meanEuclDist_gaze<< endl;
+		curEMD = wasserstein(forEMD,weights,forEMD2,weights);
+		cout<< ">>>EMD:" << curEMD << ", " << mybboxes->bounding_boxes[i].Class << endl;
+		cout << endl;
+
+		if (curEMD < minEMD){
+			minEMD = curEMD;
+			finalVerdict.data = mybboxes->bounding_boxes[i].Class;
+		}
+
+		//End of My code
+
+
+
+		// Output modified video stream
+		cv_ptr->image= img;
+		_image_pub.publish(cv_ptr->toImageMsg());
+
+		// Output saliency map
+		salmap *= 255.0;
+		salmap.convertTo(salmap, CV_8UC1);
+		cv_ptr->image = salmap;
+		cv_ptr->encoding = sensor_msgs::image_encodings::MONO8;
+		_image_sal_pub.publish(cv_ptr->toImageMsg());
+
+		// Output 3D point in the direction of the first MSR
+		if( msrs.size() > 0 ){
+		geometry_msgs::PointStamped point;
+		point.header = msg->header;
+		cv::Point3d cvPoint = _cam.projectPixelTo3dRay(msrs[0][0]);
+		point.point.x = cvPoint.x;
+		point.point.y = cvPoint.y;
+		point.point.z = cvPoint.z;
+		_poi_pub.publish(point);
+		}
+
+	}
+	//Published correct object into final verdict topic
+	_final_verdict_pub.publish(finalVerdict);
+	cout<< "Final verdict: " << finalVerdict.data << endl;
+	cout << "--------------------------------------------------------" << endl;
 }
 
 void VOCUS_ROS::imageCb(const sensor_msgs::ImageConstPtr& msg, const vocus2_ros::BoundingBoxesConstPtr& mybboxes, const vocus2_ros::GazeInfoBino_ArrayConstPtr& myarray)
-{
+{	
     //_cam.fromCameraInfo(info_msg);
 	ROS_INFO("callback");
 	cout << "Number of bounding box: " << mybboxes->bounding_boxes.size() << endl;
@@ -238,34 +512,60 @@ void VOCUS_ROS::imageCb(const sensor_msgs::ImageConstPtr& msg, const vocus2_ros:
 		Size s = salmap.size();
 		int rows = s.height;
 		int cols = s.width;
-		int l_pixels = 400; //User defined
-		if(l_pixels > rows*cols) l_pixels = rows*cols;
-		cout << "No of rows(y): " << rows << ", No of cols(x): " << cols << endl;
+		int l_pixels;
+		float mean;
+		if (useThres){ //Use threshold (Changed in VOCUS_ROS.h)
+			float threshold = 0.8;
+			//int l_pixels; //User defined
+			cout << "No of rows(y): " << rows << ", No of cols(x): " << cols << endl;
 
-		for (int i = 0; i<rows; ++i){
-			for(int j =0; j<cols; j++){
-				values temp;
-				temp.row = i;
-				temp.col = j;
-				temp.intensity = salmap.at<float>(i,j);
-				tempStorage.push_back(temp);
+			for (int i = 0; i<rows; ++i){
+				for(int j =0; j<cols; j++){
+					values temp;
+					temp.row = i;
+					temp.col = j;
+					temp.intensity = salmap.at<float>(i,j);
+					if(temp.intensity < threshold) continue;
+					tempStorage.push_back(temp);
+				}
+			}
+
+			l_pixels = tempStorage.size();
+			sortIntensity(tempStorage); //Sort in according to the function
+
+			for(int i=0; i<l_pixels; i++){
+				storage.push_back(tempStorage[i]);
+				totalSum+=tempStorage[i].intensity;
 			}
 		}
+		else{ // Use fixed l_pixels
+			l_pixels = 4000; //User defined
+			if(l_pixels > rows*cols) l_pixels = rows*cols;
+			cout << "No of rows(y): " << rows << ", No of cols(x): " << cols << endl;
 
-		int totalSize = tempStorage.size()-1;
-		sortIntensity(tempStorage); //Sort in according to the function
+			for (int i = 0; i<rows; ++i){
+				for(int j =0; j<cols; j++){
+					values temp;
+					temp.row = i;
+					temp.col = j;
+					temp.intensity = salmap.at<float>(i,j);
+					tempStorage.push_back(temp);
+				}
+			}
 
-		for(int i=totalSize-l_pixels; i<totalSize; i++){
-			storage.push_back(tempStorage[i]);
-			totalSum+=tempStorage[i].intensity;
+			int totalSize = tempStorage.size()-1;
+			sortIntensity(tempStorage); //Sort in according to the function
+
+			for(int i=totalSize-l_pixels; i<totalSize; i++){
+				storage.push_back(tempStorage[i]);
+				totalSum+=tempStorage[i].intensity;
+			}
 		}
-
-		float mean = totalSum/float(l_pixels);
-
+		
+		mean = totalSum/float(l_pixels);
 		for (int i = 0; i<l_pixels; i++){
 			sdSum += pow((storage[i].intensity-mean),2);
 		}
-
 		sd = sqrt(sdSum/l_pixels);
 		cout << "Mean is " << mean << endl;
 		cout << "Standard Deviation is " << sd << endl;
@@ -285,15 +585,25 @@ void VOCUS_ROS::imageCb(const sensor_msgs::ImageConstPtr& msg, const vocus2_ros:
 				sample = d(gen);
 				if(sample >= storage[0].intensity) break; //Retry until obtained intensity >= to min
 			}
-			//cout << "RNG: "<< sample << endl;
 			int idx = findClosestID(storage,l_pixels,sample);
-			//cout << "IDX: " << idx << endl;
 			finalValues temp;
 			temp.row = storage[idx].row;
 			temp.col = storage[idx].col;
 			temp.euclideanDistance = calcDistance(temp.row,temp.col,rows/2,cols/2);
 			forEMD.push_back(temp.euclideanDistance);
-			forEMD2.push_back(calcDistance(myarray->x[i]*1280-1, myarray->y[i]*720-1, (xmin+xdiff/2), 720-(ymin+ydiff/2))); //Bottom Left is origin[myarray], Top Left is origin[bboxes]
+			float curX = myarray->x[i];
+			float curY = myarray->y[i];
+			
+			//To handle if curX,curY [estimated gaze position] is not (0,1)
+			if ((i=0) && ((curX < 0)||(curX>1))) curX = (myarray->x[i+1]< 1 && myarray->x[i+1] >0) ? myarray->x[i+1] : ((curX>1) ? 1 : 0);
+			else if ((i=k_pixels-1) && ((curX < 0)||(curX>1))) curX = (myarray->x[i-1]< 1 && myarray->x[i-1] >0) ? myarray->x[i-1] : ((curX>1) ? 1 : 0);
+			else if((curX < 0)||(curX>1)) curX = myarray->x[i-1];
+
+			if ((i=0) && ((curY < 0)||(curY>1))) curY = (myarray->y[i+1]< 1 && myarray->y[i+1] >0) ? myarray->y[i+1] : ((curY>1) ? 1 : 0);
+			else if ((i=k_pixels-1) && ((curY < 0)||(curY>1))) curY = (myarray->y[i-1]< 1 && myarray->y[i-1] >0) ? myarray->y[i-1] : ((curY>1) ? 1 : 0);
+			else if((curY < 0)||(curY>1)) curY = myarray->y[i-1];
+
+			forEMD2.push_back(calcDistance(curX*1280-1, (1-curY)*720-1, (xmin+xdiff/2), (ymin+ydiff/2))); //Bottom Left is origin[myarray], Top Left is origin[bboxes]
 			weights.push_back(1);
 			sumEuclDist+=forEMD[i];
 			sumEuclDist_gaze+=forEMD2[i];
@@ -342,6 +652,8 @@ void VOCUS_ROS::imageCb(const sensor_msgs::ImageConstPtr& msg, const vocus2_ros:
 	}
 	//Published correct object into final verdict topic
 	_final_verdict_pub.publish(finalVerdict);
+	cout<< "Final verdict: " << finalVerdict.data << endl;
+	cout << "--------------------------------------------------------" << endl;
 
 }
 

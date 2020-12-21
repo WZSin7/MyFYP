@@ -104,18 +104,19 @@ if __name__ == "__main__":
 					count = 0
 					x_pos.clear()
 					y_pos.clear()
-		# elif topic == b'gaze.3d.0.' or topic == b'gaze.3d.1.':
-		# 	outmsg = gaze_parser_mono(message)
-		# 	if not outmsg == -1:
-		# 		rospy.loginfo("Mono")
-		# 		rospy.loginfo(outmsg.confidence)
-		# 		rospy.loginfo(outmsg.norm_pos) 
-		# 		pub_gaze_mono.publish(outmsg)
-		# 		count +=1
-		# 		print(count)
-		# 		if count == 30:	
-		# 			pub_array()
-		# 			count = 0
-		# 			x_pos.clear()
-		# 			y_pos.clear()
+		elif topic == b'gaze.3d.0.' or topic == b'gaze.3d.1.': #Monocular gaze datum, no prerequisite needed
+			outmsg = gaze_parser_mono(message)
+			if not outmsg == -1:
+				if outmsg.confidence > 0.75:
+					rospy.loginfo("Mono")
+					rospy.loginfo(outmsg.confidence)
+					rospy.loginfo(outmsg.norm_pos) 
+					pub_gaze_mono.publish(outmsg)
+					count +=1
+					print(count)
+					if count == 30:	
+						pub_array()
+						count = 0
+						x_pos.clear()
+						y_pos.clear()
 

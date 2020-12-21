@@ -50,7 +50,7 @@ public:
     // callback that is called when a new image is published to the topic
   void imageCb(const sensor_msgs::ImageConstPtr& msg, const vocus2_ros::BoundingBoxesConstPtr& mybboxes, const vocus2_ros::GazeInfoBino_ArrayConstPtr& myarray);
   
-  void imageCb2(const sensor_msgs::ImageConstPtr& msg, const vocus2_ros::BoundingBoxesConstPtr& mybboxes, const vocus2_ros::GazeInfoBino_ArrayConstPtr& myarray);
+  void imageCb2(const sensor_msgs::ImageConstPtr& msg, const vocus2_ros::BoundingBoxesConstPtr& mybboxes);
 
     // callback that is called after the configuration in dynamic_reconfigure has been changed
   void callback(vocus2_ros::vocus2_rosConfig &config, uint32_t level);
@@ -81,8 +81,9 @@ private:
 	message_filters::Subscriber<vocus2_ros::BoundingBoxes> bboxes_sub;
   message_filters::Subscriber<vocus2_ros::GazeInfoBino_Array> array_sub;
   typedef message_filters::sync_policies::ApproximateTime<sensor_msgs::Image, vocus2_ros::BoundingBoxes, vocus2_ros::GazeInfoBino_Array> MySyncPolicy; //Change between 'Approximate' and 'Exact'
-	typedef message_filters::Synchronizer<MySyncPolicy> Sync;
+	typedef message_filters::Synchronizer<MySyncPolicy> Sync; //, vocus2_ros::GazeInfoBino_Array ^^^^^^^^^^^^^^^^
   boost::shared_ptr<Sync> sync;
+  bool useThres = true; //Use threshold / fixed l_pixels value
 
   image_geometry::PinholeCameraModel _cam;
 
