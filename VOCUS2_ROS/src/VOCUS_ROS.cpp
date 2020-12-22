@@ -22,6 +22,7 @@
 #include "ImageFunctions.h"
 #include "HelperFunctions.h"
 #include "wasserstein.h"
+#include "myEMD.h"
 
 #include <vocus2_ros/BoundingBox.h>
 #include <vocus2_ros/BoundingBoxes.h>
@@ -29,6 +30,7 @@
 #include <opencv2/opencv.hpp>
 #include <random>
 #include "std_msgs/String.h"
+#include <std_msgs/Int16.h>
 
 using namespace cv;
 
@@ -56,6 +58,7 @@ VOCUS_ROS::VOCUS_ROS() : _it(_nh) //Constructor [assign '_nh' to '_it']
 	_image_sal_pub = _it.advertise("saliency_image_out", 1); //Potentially important
         _poi_pub = _nh.advertise<geometry_msgs::PointStamped>("saliency_poi", 1);
 	_final_verdict_pub = _nh.advertise<std_msgs::String>("final_verdict",10);
+	_nums_pub = _nh.advertise<std_msgs::Int16>("final_EMD",10);
 }
 
 VOCUS_ROS::~VOCUS_ROS()
@@ -149,6 +152,7 @@ void VOCUS_ROS::imageCb2(const sensor_msgs::ImageConstPtr& msg, const vocus2_ros
 
 	Mat mainImg, img;
 	float minEMD = INFINITY;
+	std_msgs::Int16 nums;
 	std_msgs::String finalVerdict;
         // _cam.rectifyImage(cv_ptr->image, img);
 	mainImg = cv_ptr->image;
@@ -318,11 +322,12 @@ void VOCUS_ROS::imageCb2(const sensor_msgs::ImageConstPtr& msg, const vocus2_ros
 		float sample, curEMD;
 		int k_pixels = 30; //l_pixels*0.2; //User defined
 		vector<finalValues> hypoGazePoints;
-		vector<int> forEMD, weights,forEMD2;
+		vector<int> forEMD,forEMD2;
+		vector<float> weights;
 		float sumEuclDist=0,sumEuclDist_gaze = 0, meanEuclDist,meanEuclDist_gaze;
 		std::normal_distribution<float> d(mean, sd);
-		vector<float> ArrayX = {0.57396312,0.5062255,0.49048652,0.53921754,0.47258949,0.48021186,0.43413674,0.54907195,0.53889412,0.46989795,0.55627278,0.501576,0.56955141,0.52339319,0.54355547,0.49963507,0.46193752,0.45237815,0.53322683,0.46883785,0.48874358,0.50336476,0.43106166,0.43499051,0.4628428,0.46909091,0.44935297,0.47186942,0.48096309,0.54941127};
-		vector<float> ArrayY = {};
+		vector<float> ArrayX = {0.45154555,0.79104065,0.20323314,0.69286024,0.56355077,0.457393,0.48683673,0.77258694,0.12647974,0.46281186,0.42835633,0.54959746,0.79315207,0.6019607,0.7961925,0.54594609,0.69756156,0.68537091,0.49295848,0.37404352,0.47028527,0.53440382,0.46116589,0.64822678,0.576477,0.62002987,0.71686001,0.90351725,0.63792232,0.42652261};
+		vector<float> ArrayY = {0.33148194,0.93263397,0.68276355,0.68563536,0.54432918,0.38505307,0.07299704,0.38816335,0.28777457,0.31563292,0.83514869,0.96214076,0.4204175,0.36412493,0.23316636,0.42934754,0.64177146,0.50135801,0.67151622,0.19294032,0.01756836,0.65316146,0.98085915,0.57783977,0.39343438,0.47997681,0.80559996,0.37377691,0.5327095,0.6201876};
 		for(int i = 0; i<k_pixels; i++){
 			while(true){
 				sample = d(gen);
@@ -335,12 +340,12 @@ void VOCUS_ROS::imageCb2(const sensor_msgs::ImageConstPtr& msg, const vocus2_ros
 			temp.row = storage[idx].row;
 			temp.col = storage[idx].col;
 			temp.euclideanDistance = calcDistance(temp.row,temp.col,rows/2,cols/2);
-			cout << "gaussX: " << temp.col << ", gaussY: " << temp.row<< ", centre of BBox X: " <<cols/2<< ", centre of BBox Y: " <<rows/2 << endl;
+			//cout << "gaussX: " << temp.col << ", gaussY: " << temp.row<< ", centre of BBox X: " <<cols/2<< ", centre of BBox Y: " <<rows/2 << endl;
 			forEMD.push_back(temp.euclideanDistance);
 			//forEMD2.push_back(calcDistance(0.59*1280-1, (1-0.45)*720-1, (xmin+xdiff/2), 720-(ymin+ydiff/2))); //FOR CUP; Bottom Left is origin[myarray], Top Left is origin[bboxes]
 			//forEMD2.push_back(calcDistance(0.67*1280-1, (1-0.39)*720-1, (xmin+xdiff/2), (ymin+ydiff/2))); //FOR KEYBOARD; Bottom Left is origin[myarray], Top Left is origin[bboxes]
 			forEMD2.push_back(calcDistance(ArrayX[i]*1280-1, (1-ArrayY[i])*720-1, (xmin+xdiff/2), (ymin+ydiff/2))); //FOR LAPTOP; Bottom Left is origin[myarray], Top Left is origin[bboxes]
-			//cout << "gazeX: " << ArrayX[i]*1280-1 << ", gazeY: " << (1-ArrayY[i])*720-1 << ", centre of BBox X: " << (xmin+xdiff/2) << ", centre of BBox Y: " << ymin+ydiff/2 << endl;
+			cout << "gazeX: " << ArrayX[i]*1280-1 << ", gazeY: " << (1-ArrayY[i])*720-1 << ", centre of BBox X: " << (xmin+xdiff/2) << ", centre of BBox Y: " << ymin+ydiff/2 << endl;
 			weights.push_back(1);
 			sumEuclDist+=forEMD[i];
 			sumEuclDist_gaze+=forEMD2[i];
@@ -359,13 +364,17 @@ void VOCUS_ROS::imageCb2(const sensor_msgs::ImageConstPtr& msg, const vocus2_ros
 		meanEuclDist_gaze = sumEuclDist_gaze/float(k_pixels);
 		cout << "Average Euclidean Distance for saliency map: " << meanEuclDist<< endl;
 		cout << "Average Euclidean Distance for gaze points: " << meanEuclDist_gaze<< endl;
-		curEMD = wasserstein(forEMD,weights,forEMD2,weights);
+		//curEMD = wasserstein(forEMD,weights,forEMD2,weights);
+		signature_t s1 = {30, forEMD, weights};
+		signature_t s2 = {30, forEMD2, weights};
+		curEMD = emd(&s1, &s2, VOCUS_ROS::dist, NULL, NULL);
 		cout<< ">>>EMD:" << curEMD << ", " << mybboxes->bounding_boxes[i].Class << endl;
 		cout << endl;
 
 		if (curEMD < minEMD){
 			minEMD = curEMD;
 			finalVerdict.data = mybboxes->bounding_boxes[i].Class;
+			nums.data = curEMD;
 		}
 
 		//End of My code
@@ -395,9 +404,13 @@ void VOCUS_ROS::imageCb2(const sensor_msgs::ImageConstPtr& msg, const vocus2_ros
 		}
 
 	}
+	//Set output to none if EMD is too high
+	if (minEMD>160) finalVerdict.data = "None";
+
 	//Published correct object into final verdict topic
 	_final_verdict_pub.publish(finalVerdict);
-	cout<< "Final verdict: " << finalVerdict.data << endl;
+	_nums_pub.publish(nums);
+	cout << "Final verdict: " << finalVerdict.data << ", " << nums.data << endl;
 	cout << "--------------------------------------------------------" << endl;
 }
 
@@ -424,7 +437,6 @@ void VOCUS_ROS::imageCb(const sensor_msgs::ImageConstPtr& msg, const vocus2_ros:
 		ROS_ERROR("cv_bridge exception: %s", e.what());
 		return;
 	}
-
 
 	Mat mainImg, img;
 	float minEMD = INFINITY;
@@ -577,7 +589,8 @@ void VOCUS_ROS::imageCb(const sensor_msgs::ImageConstPtr& msg, const vocus2_ros:
 		float sample, curEMD;
 		int k_pixels = 30; //l_pixels*0.2; //User defined
 		vector<finalValues> hypoGazePoints;
-		vector<int> forEMD, weights,forEMD2;
+		vector<int> forEMD, forEMD2;
+		vector<float> weights;
 		float sumEuclDist=0,sumEuclDist_gaze = 0, meanEuclDist,meanEuclDist_gaze;
 		std::normal_distribution<float> d(mean, sd);
 		for(int i = 0; i<k_pixels; i++){
@@ -613,7 +626,9 @@ void VOCUS_ROS::imageCb(const sensor_msgs::ImageConstPtr& msg, const vocus2_ros:
 		meanEuclDist_gaze = sumEuclDist_gaze/float(k_pixels);
 		cout << "Average Euclidean Distance for saliency map: " << meanEuclDist<< endl;
 		cout << "Average Euclidean Distance for gaze points: " << meanEuclDist_gaze<< endl;
-		curEMD = wasserstein(forEMD,weights,forEMD2,weights);
+		signature_t s1 = {30, forEMD, weights};
+		signature_t s2 = {30, forEMD2, weights};
+		curEMD = emd(&s1, &s2, VOCUS_ROS::dist, NULL, NULL);
 		cout<< "EMD:" << curEMD << endl;
 
 		if (curEMD < minEMD){
@@ -650,6 +665,9 @@ void VOCUS_ROS::imageCb(const sensor_msgs::ImageConstPtr& msg, const vocus2_ros:
 		}
 
 	}
+	//Set output to none if EMD is too high
+	if (minEMD>160) finalVerdict.data = "None";
+
 	//Published correct object into final verdict topic
 	_final_verdict_pub.publish(finalVerdict);
 	cout<< "Final verdict: " << finalVerdict.data << endl;
@@ -719,4 +737,8 @@ int VOCUS_ROS::calcDistance(int x1, int y1, int x2, int y2){
 	int y = y1 - y2;
 
 	return sqrt(pow(x, 2) + pow(y, 2));
+}
+
+float VOCUS_ROS::dist(int F1, int F2){
+	return abs(F1 - F2);
 }

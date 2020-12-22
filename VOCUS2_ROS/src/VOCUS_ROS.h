@@ -66,6 +66,8 @@ public:
 
   int calcDistance(int x1, int y1, int x2, int y2);
 
+  static float dist(int F1, int F2);
+
 private:
   // the VOCUS2 object that will 
   // process all the images
@@ -76,11 +78,11 @@ private:
   ros::Subscriber _cam_sub;
   image_transport::Publisher _image_pub;
   image_transport::Publisher _image_sal_pub;
-  ros::Publisher _poi_pub, _final_verdict_pub;
+  ros::Publisher _poi_pub, _final_verdict_pub, _nums_pub;
   message_filters::Subscriber<sensor_msgs::Image> image_sub;
 	message_filters::Subscriber<vocus2_ros::BoundingBoxes> bboxes_sub;
   message_filters::Subscriber<vocus2_ros::GazeInfoBino_Array> array_sub;
-  typedef message_filters::sync_policies::ApproximateTime<sensor_msgs::Image, vocus2_ros::BoundingBoxes, vocus2_ros::GazeInfoBino_Array> MySyncPolicy; //Change between 'Approximate' and 'Exact'
+  typedef message_filters::sync_policies::ApproximateTime<sensor_msgs::Image, vocus2_ros::BoundingBoxes> MySyncPolicy; //Change between 'Approximate' and 'Exact'
 	typedef message_filters::Synchronizer<MySyncPolicy> Sync; //, vocus2_ros::GazeInfoBino_Array ^^^^^^^^^^^^^^^^
   boost::shared_ptr<Sync> sync;
   bool useThres = true; //Use threshold / fixed l_pixels value
