@@ -21,7 +21,6 @@
 
 #include "ImageFunctions.h"
 #include "HelperFunctions.h"
-#include "wasserstein.h"
 #include "myEMD.h"
 
 #include <vocus2_ros/BoundingBox.h>
@@ -44,11 +43,11 @@ VOCUS_ROS::VOCUS_ROS() : _it(_nh) //Constructor [assign '_nh' to '_it']
 	//Added by me
 	image_sub.subscribe(_nh, "/darknet_ros/detection_image", 1);
 	bboxes_sub.subscribe(_nh, "/darknet_ros/bounding_boxes", 1);
-	array_sub.subscribe(_nh, "gaze_array", 1);
-	sync.reset(new Sync(MySyncPolicy(10), image_sub, bboxes_sub));
-	sync->registerCallback(boost::bind(&VOCUS_ROS::imageCb2, this, _1, _2));
-	// sync.reset(new Sync(MySyncPolicy(10), image_sub, bboxes_sub, array_sub));
-	// sync->registerCallback(boost::bind(&VOCUS_ROS::imageCb, this, _1, _2, _3));
+	array_sub.subscribe(_nh, "gaze_array2", 1);
+	// sync.reset(new Sync(MySyncPolicy(10), image_sub, bboxes_sub));
+	// sync->registerCallback(boost::bind(&VOCUS_ROS::imageCb2, this, _1, _2));
+	sync.reset(new Sync(MySyncPolicy(10), image_sub, bboxes_sub, array_sub));
+	sync->registerCallback(boost::bind(&VOCUS_ROS::imageCb, this, _1, _2, _3));
 	//End of added by me
 
 	//_image_sub = _it.subscribe("/usb_cam/image_raw", 1,
@@ -56,9 +55,10 @@ VOCUS_ROS::VOCUS_ROS() : _it(_nh) //Constructor [assign '_nh' to '_it']
 	//_image_pub = _it.advertise("/image_converter/output_video", 1);
 	_image_pub = _it.advertise("most_salient_region", 1);
 	_image_sal_pub = _it.advertise("saliency_image_out", 1); //Potentially important
-        _poi_pub = _nh.advertise<geometry_msgs::PointStamped>("saliency_poi", 1);
+    _poi_pub = _nh.advertise<geometry_msgs::PointStamped>("saliency_poi", 1);
 	_final_verdict_pub = _nh.advertise<std_msgs::String>("final_verdict",10);
 	_nums_pub = _nh.advertise<std_msgs::Int16>("final_EMD",10);
+	_truth_pub = _nh.advertise<std_msgs::String>("truth",10);
 }
 
 VOCUS_ROS::~VOCUS_ROS()
@@ -364,7 +364,6 @@ void VOCUS_ROS::imageCb2(const sensor_msgs::ImageConstPtr& msg, const vocus2_ros
 		meanEuclDist_gaze = sumEuclDist_gaze/float(k_pixels);
 		cout << "Average Euclidean Distance for saliency map: " << meanEuclDist<< endl;
 		cout << "Average Euclidean Distance for gaze points: " << meanEuclDist_gaze<< endl;
-		//curEMD = wasserstein(forEMD,weights,forEMD2,weights);
 		signature_t s1 = {30, forEMD, weights};
 		signature_t s2 = {30, forEMD2, weights};
 		curEMD = emd(&s1, &s2, VOCUS_ROS::dist, NULL, NULL);
@@ -439,8 +438,9 @@ void VOCUS_ROS::imageCb(const sensor_msgs::ImageConstPtr& msg, const vocus2_ros:
 	}
 
 	Mat mainImg, img;
-	float minEMD = INFINITY;
-	std_msgs::String finalVerdict;
+	float minEMD = INFINITY, minFixation = INFINITY;
+	std_msgs::String finalVerdict, finalVerdict_fixation;
+	std_msgs::Int16 nums;
         // _cam.rectifyImage(cv_ptr->image, img);
 	mainImg = cv_ptr->image;
 
@@ -591,7 +591,7 @@ void VOCUS_ROS::imageCb(const sensor_msgs::ImageConstPtr& msg, const vocus2_ros:
 		vector<finalValues> hypoGazePoints;
 		vector<int> forEMD, forEMD2;
 		vector<float> weights;
-		float sumEuclDist=0,sumEuclDist_gaze = 0, meanEuclDist,meanEuclDist_gaze;
+		float sumEuclDist=0,sumEuclDist_gaze = 0, meanEuclDist,meanEuclDist_gaze, lastValid_X =0.5, lastValid_Y =0.5;
 		std::normal_distribution<float> d(mean, sd);
 		for(int i = 0; i<k_pixels; i++){
 			while(true){
@@ -608,13 +608,14 @@ void VOCUS_ROS::imageCb(const sensor_msgs::ImageConstPtr& msg, const vocus2_ros:
 			float curY = myarray->y[i];
 			
 			//To handle if curX,curY [estimated gaze position] is not (0,1)
-			if ((i=0) && ((curX < 0)||(curX>1))) curX = (myarray->x[i+1]< 1 && myarray->x[i+1] >0) ? myarray->x[i+1] : ((curX>1) ? 1 : 0);
-			else if ((i=k_pixels-1) && ((curX < 0)||(curX>1))) curX = (myarray->x[i-1]< 1 && myarray->x[i-1] >0) ? myarray->x[i-1] : ((curX>1) ? 1 : 0);
-			else if((curX < 0)||(curX>1)) curX = myarray->x[i-1];
-
-			if ((i=0) && ((curY < 0)||(curY>1))) curY = (myarray->y[i+1]< 1 && myarray->y[i+1] >0) ? myarray->y[i+1] : ((curY>1) ? 1 : 0);
-			else if ((i=k_pixels-1) && ((curY < 0)||(curY>1))) curY = (myarray->y[i-1]< 1 && myarray->y[i-1] >0) ? myarray->y[i-1] : ((curY>1) ? 1 : 0);
-			else if((curY < 0)||(curY>1)) curY = myarray->y[i-1];
+			if ((curX < 0)||(curX>1)) curX = lastValid_X;
+			if ((curY < 0)||(curY>1)) curY = lastValid_Y;
+			lastValid_X = curX;
+			lastValid_Y = curY;
+			cout << "curX: " << curX <<", curY: "<< curY << endl;
+			// if ((i=0) && ((curY < 0)||(curY>1))) curY = (myarray->y[i+1]< 1 && myarray->y[i+1] >0) ? myarray->y[i+1] : ((myarray->y[i+1]>1) ? 1 : 0);
+			// else if ((i=k_pixels-1) && ((curY < 0)||(curY>1))) curY = myarray->y[i-1];
+			// else if((curY < 0)||(curY>1)) curY = myarray->y[i-1];
 
 			forEMD2.push_back(calcDistance(curX*1280-1, (1-curY)*720-1, (xmin+xdiff/2), (ymin+ydiff/2))); //Bottom Left is origin[myarray], Top Left is origin[bboxes]
 			weights.push_back(1);
@@ -628,12 +629,29 @@ void VOCUS_ROS::imageCb(const sensor_msgs::ImageConstPtr& msg, const vocus2_ros:
 		cout << "Average Euclidean Distance for gaze points: " << meanEuclDist_gaze<< endl;
 		signature_t s1 = {30, forEMD, weights};
 		signature_t s2 = {30, forEMD2, weights};
+		//cout << "For EMD1: " << endl;
+		// for (int i=0; i<forEMD.size();i++){
+		// 	cout<<forEMD[i]<<endl;
+		// }
+		// cout << "For EMD2: " << endl;
+		// for (int i=0; i<forEMD2.size();i++){ 
+		// 	cout<<forEMD2[i]<<endl;
+		// }
 		curEMD = emd(&s1, &s2, VOCUS_ROS::dist, NULL, NULL);
-		cout<< "EMD:" << curEMD << endl;
+		cout<< ">>>EMD:" << curEMD << ", Class:" << mybboxes->bounding_boxes[i].Class << endl;
+
+		float temp = (accumulate(forEMD2.begin(),forEMD2.end(),0))/30.0;
+		cout << "temp: "<< temp << endl;
 
 		if (curEMD < minEMD){
 			minEMD = curEMD;
 			finalVerdict.data = mybboxes->bounding_boxes[i].Class;
+			nums.data = curEMD;
+		}
+
+		if (temp < minFixation){
+			minFixation= temp;
+			finalVerdict_fixation.data = mybboxes->bounding_boxes[i].Class;
 		}
 
 		//End of My code
@@ -670,8 +688,23 @@ void VOCUS_ROS::imageCb(const sensor_msgs::ImageConstPtr& msg, const vocus2_ros:
 
 	//Published correct object into final verdict topic
 	_final_verdict_pub.publish(finalVerdict);
-	cout<< "Final verdict: " << finalVerdict.data << endl;
+	_nums_pub.publish(nums);
+	cout << "Final verdict: " << finalVerdict.data << ", " << nums.data << endl;
+	cout << "Fixation final verdict: " << finalVerdict_fixation.data << endl;
 	cout << "--------------------------------------------------------" << endl;
+	std_msgs::String msg_truth;
+    std::stringstream ss;
+	if (finalVerdict.data == finalVerdict_fixation.data){
+		ss << "True";
+   		 msg_truth.data = ss.str();
+		 _truth_pub.publish(msg_truth);
+	}
+	else {
+		ss << "False";
+   		msg_truth.data = ss.str();
+		_truth_pub.publish(msg_truth);
+	}
+	cout << endl;
 
 }
 
