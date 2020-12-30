@@ -78,14 +78,16 @@ private:
   ros::Subscriber _cam_sub;
   image_transport::Publisher _image_pub;
   image_transport::Publisher _image_sal_pub;
-  ros::Publisher _poi_pub, _final_verdict_pub, _nums_pub, _truth_pub;
+  ros::Publisher _poi_pub, _final_verdict_pub, _final_verdict_fixation_pub, _truth_pub;
   message_filters::Subscriber<sensor_msgs::Image> image_sub;
 	message_filters::Subscriber<vocus2_ros::BoundingBoxes> bboxes_sub;
   message_filters::Subscriber<vocus2_ros::GazeInfoBino_Array> array_sub;
-  typedef message_filters::sync_policies::ApproximateTime<sensor_msgs::Image, vocus2_ros::BoundingBoxes, vocus2_ros::GazeInfoBino_Array> MySyncPolicy; //Change between 'Approximate' and 'Exact'
-	typedef message_filters::Synchronizer<MySyncPolicy> Sync; //, vocus2_ros::GazeInfoBino_Array ^^^^^^^^^^^^^^^^
+  //typedef message_filters::sync_policies::ApproximateTime<sensor_msgs::Image, vocus2_ros::BoundingBoxes> MySyncPolicy; //Change between 'Approximate' and 'Exact'
+  typedef message_filters::sync_policies::ApproximateTime<sensor_msgs::Image, vocus2_ros::BoundingBoxes, vocus2_ros::GazeInfoBino_Array> MySyncPolicy;
+	typedef message_filters::Synchronizer<MySyncPolicy> Sync; 
   boost::shared_ptr<Sync> sync;
   bool useThres = true; //Use threshold / fixed l_pixels value
+  int k_pixels = 30; //User defined
 
   image_geometry::PinholeCameraModel _cam;
 

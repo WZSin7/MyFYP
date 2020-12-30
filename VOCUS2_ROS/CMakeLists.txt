@@ -32,6 +32,7 @@ add_message_files(
    BoundingBoxes.msg
    BoundingBox.msg
    GazeInfoBino_Array.msg
+   Result.msg
  )
 
 ## Generate added messages and services with any dependencies listed here

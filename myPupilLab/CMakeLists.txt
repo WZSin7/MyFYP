@@ -13,6 +13,8 @@ find_package(catkin REQUIRED COMPONENTS
   cv_bridge
   sensor_msgs
   std_msgs
+  roscpp
+  message_filters
 )
 
 ## System dependencies are found with CMake's conventions
@@ -57,6 +59,7 @@ find_package(catkin REQUIRED COMPONENTS
    GazeInfoMono.msg
    WorldCameraImage.msg
    GazeInfoBino_Array.msg
+   Result.msg
  )
 
 ## Generate services in the 'srv' folder
@@ -111,7 +114,7 @@ find_package(catkin REQUIRED COMPONENTS
 catkin_package(
 #  INCLUDE_DIRS include
 #  LIBRARIES myPupilLab
-  CATKIN_DEPENDS rospy std_msgs message_runtime
+  CATKIN_DEPENDS roscpp rospy std_msgs message_runtime message_generation message_filters
 #  DEPENDS system_lib
 )
 
@@ -140,6 +143,9 @@ include_directories(
 ## With catkin_make all packages are built within a single CMake context
 ## The recommended prefix ensures that target names across packages don't collide
 # add_executable(${PROJECT_NAME}_node src/myPupilLab_node.cpp)
+
+add_executable(resultsTabulator scripts/tabResults.cpp)
+target_link_libraries(resultsTabulator ${catkin_LIBRARIES})
 
 ## Rename C++ executable without prefix
 ## The above recommended prefix causes long target names, the following renames the
@@ -191,7 +197,6 @@ include_directories(
 #   PATTERN ".svn" EXCLUDE
 # )
 
-## Mark other files for installation (e.g. launch and bag files, etc.)
 # install(FILES
 #   # myfile1
 #   # myfile2

@@ -32,7 +32,7 @@ subscriber.subscribe('gaze.')  # receive pupil info, 'gaze.' is also valid but n
 
 pub_gaze_bino = rospy.Publisher('gaze_info_bino',GazeInfoBino,queue_size=10) #Node name, message type
 pub_gaze_mono = rospy.Publisher('gaze_info_mono',GazeInfoMono,queue_size=10)
-pub_gaze_bino_30 = rospy.Publisher('gaze_array',GazeInfoBino_Array,queue_size=1)
+pub_gaze_bino_60 = rospy.Publisher('gaze_array',GazeInfoBino_Array,queue_size=1)
 
 def gaze_parser_bino(message):
 	#Parse gazeInfo into a message.
@@ -74,7 +74,7 @@ def pub_array():
 	outmsg.x = x_pos
 	outmsg.y = y_pos
 	outmsg.header.stamp = rospy.Time.now()
-	pub_gaze_bino_30.publish(outmsg)
+	pub_gaze_bino_60.publish(outmsg)
 
 
 if __name__ == "__main__":

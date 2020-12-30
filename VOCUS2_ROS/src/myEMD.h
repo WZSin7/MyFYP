@@ -1,5 +1,5 @@
 /* 
-A C++ rewrite of "An implementation of the Earth Movers Distance. 
+A C++ integration of "An implementation of the Earth Movers Distance. 
 Based of the solution for the Transportation problem as described in "Introduction to Mathematical Programming" 
 by F. S. Hillier and G. J. Lieberman, McGraw-Hill, 1990.
 

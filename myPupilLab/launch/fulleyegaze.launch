@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<launch>
+		<node name="gazePublisher" pkg="myPupilLab" type="gazePub.py" args="">
+		<node name="worldImagePublisher" pkg="myPupilLab" type="worldCameraPub.py" args="">
+		</node>
+
+</launch>
