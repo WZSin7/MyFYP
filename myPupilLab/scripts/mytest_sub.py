@@ -7,6 +7,7 @@ pub_gaze_transition = rospy.Publisher('gaze_array2',GazeInfoBino_Array,queue_siz
 
 
 def callback(data):
+	#rospy.loginfo("Sucess!")
 	outmsg = GazeInfoBino_Array()
 	outmsg.x = data.x
 	outmsg.y = data.y
