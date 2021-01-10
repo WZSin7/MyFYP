@@ -105,7 +105,9 @@ if __name__ == "__main__":
 				# pass
 			try:
 				print("Publish Image to /camera/rgb/image_raw")
-				test_Img_Pub.publish(bridge.cv2_to_imgmsg(recent_world))
+				image_msg = bridge.cv2_to_imgmsg(recent_world)
+				image_msg.header.stamp = rospy.Time.now()
+				test_Img_Pub.publish(image_msg)
 			except CvBridgeError as e:
 				print(e)
 	
