@@ -14,6 +14,7 @@
 #include <vocus2_ros/BoundingBox.h>
 #include <vocus2_ros/BoundingBoxes.h>
 #include <vocus2_ros/GazeInfoBino_Array.h>
+#include <vocus2_ros/Result_Detectron2.h>
 #include <message_filters/subscriber.h>
 #include <message_filters/time_synchronizer.h>
 #include <message_filters/sync_policies/exact_time.h>
@@ -52,6 +53,8 @@ public:
   
   void imageCb2(const sensor_msgs::ImageConstPtr& msg, const vocus2_ros::BoundingBoxesConstPtr& mybboxes);
 
+  void imageCb_MaskRCNN(const sensor_msgs::ImageConstPtr& msg, const vocus2_ros::Result_Detectron2ConstPtr& detectron2_result, const vocus2_ros::GazeInfoBino_ArrayConstPtr& myarray);
+
     // callback that is called after the configuration in dynamic_reconfigure has been changed
   void callback(vocus2_ros::vocus2_rosConfig &config, uint32_t level);
 
@@ -82,12 +85,18 @@ private:
   message_filters::Subscriber<sensor_msgs::Image> image_sub;
 	message_filters::Subscriber<vocus2_ros::BoundingBoxes> bboxes_sub;
   message_filters::Subscriber<vocus2_ros::GazeInfoBino_Array> array_sub;
+  message_filters::Subscriber<vocus2_ros::Result_Detectron2> rcnn_result_sub;
   //typedef message_filters::sync_policies::ApproximateTime<sensor_msgs::Image, vocus2_ros::BoundingBoxes> MySyncPolicy; //Change between 'Approximate' and 'Exact'
   typedef message_filters::sync_policies::ApproximateTime<sensor_msgs::Image, vocus2_ros::BoundingBoxes, vocus2_ros::GazeInfoBino_Array> MySyncPolicy;
 	typedef message_filters::Synchronizer<MySyncPolicy> Sync; 
   boost::shared_ptr<Sync> sync;
+  typedef message_filters::sync_policies::ApproximateTime<sensor_msgs::Image, vocus2_ros::Result_Detectron2, vocus2_ros::GazeInfoBino_Array> MaskRCNN_Policy;
+	typedef message_filters::Synchronizer<MaskRCNN_Policy> Sync_MaskRCNN; 
+  boost::shared_ptr<Sync_MaskRCNN> sync_MaskRCNN;
   bool useThres = true; //Use threshold / fixed l_pixels value
   int k_pixels = 30; //User defined
+  bool useMaskRCNN = true;
+  int myCount = 1;
 
   image_geometry::PinholeCameraModel _cam;
 

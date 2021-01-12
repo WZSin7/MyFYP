@@ -33,12 +33,14 @@ add_message_files(
    BoundingBox.msg
    GazeInfoBino_Array.msg
    Result.msg
+   Result_Detectron2.msg
  )
 
 ## Generate added messages and services with any dependencies listed here
  generate_messages(
    DEPENDENCIES
    std_msgs
+   sensor_msgs
  )
 catkin_package(
 #  INCLUDE_DIRS include
