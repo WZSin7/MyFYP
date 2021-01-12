@@ -37,7 +37,8 @@ class Detectron2node(object):
         self._class_names = MetadataCatalog.get(self.cfg.DATASETS.TRAIN[0]).get("thing_classes", None)
 
         self._visualization = rospy.get_param('~visualization', True)
-        self._result_pub = rospy.Publisher('~result', Result, queue_size=1)
+        self._result_pub = rospy.Publisher('~result', Result, queue_size=1) 
+        self._img_pub_for_sync = rospy.Publisher('~image', Image, queue_size=1)
         self._sub = rospy.Subscriber(rospy.get_param('~input'), Image, self._image_callback, queue_size=1)
         
         if self._visualization:
@@ -61,8 +62,10 @@ class Detectron2node(object):
                 outputs = self.predictor(np_image)
                 result = outputs["instances"].to("cpu")
                 result_msg = self.getResult(result)
-                result_msg.header.stamp = rospy.Time.now()
+                result_msg.header.stamp = img_msg.header.stamp
                 self._result_pub.publish(result_msg)
+                img_msg.header.stamp = img_msg.header.stamp
+                self._img_pub_for_sync.publish(img_msg)
 
                 # Visualize results
                 if self._visualization:
