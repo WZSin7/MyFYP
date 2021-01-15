@@ -67,8 +67,9 @@ VOCUS_ROS::VOCUS_ROS() : _it(_nh) //Constructor [assign '_nh' to '_it']
 	_image_pub = _it.advertise("most_salient_region", 1);
 	_image_sal_pub = _it.advertise("saliency_image_out", 1); //Potentially important
     _poi_pub = _nh.advertise<geometry_msgs::PointStamped>("saliency_poi", 1);
-	_final_verdict_pub = _nh.advertise<vocus2_ros::Result>("final_verdict",10);
+	_final_verdict_EMD_pub = _nh.advertise<vocus2_ros::Result>("final_verdict_EMD",10);
 	_final_verdict_fixation_pub = _nh.advertise<vocus2_ros::Result>("final_verdict_fixation",10);
+	_true_final_verdict_pub = _nh.advertise<vocus2_ros::Result>("final_verdict_true",10);
 	_truth_pub = _nh.advertise<std_msgs::String>("truth",10);
 }
 
@@ -163,7 +164,7 @@ void VOCUS_ROS::imageCb2(const sensor_msgs::ImageConstPtr& msg, const vocus2_ros
 	Mat mainImg, img;
 	float minEMD = INFINITY, minFixation = INFINITY;
 	//std_msgs::String finalVerdict, finalVerdict_fixation;
-	vocus2_ros::Result finalVerdict, finalVerdict_fixation;
+	vocus2_ros::Result finalVerdict_EMD, finalVerdict_fixation;
 	std_msgs::Int16 nums;
         // _cam.rectifyImage(cv_ptr->image, img);
 	mainImg = cv_ptr->image;
@@ -366,7 +367,7 @@ void VOCUS_ROS::imageCb2(const sensor_msgs::ImageConstPtr& msg, const vocus2_ros
 
 		if (curEMD < minEMD){
 			minEMD = curEMD;
-			finalVerdict.s = mybboxes->bounding_boxes[i].Class;
+			finalVerdict_EMD.s = mybboxes->bounding_boxes[i].Class;
 			nums.data = curEMD;
 		}
 
@@ -403,23 +404,23 @@ void VOCUS_ROS::imageCb2(const sensor_msgs::ImageConstPtr& msg, const vocus2_ros
 
 	}
 	//Set output to none if EMD is too high
-	if (minEMD>150) finalVerdict.s = "None";
+	if (minEMD>150) finalVerdict_EMD.s = "None";
 
 	//Published correct object into final verdict topic
-	finalVerdict.header.stamp = ros::Time::now();
+	finalVerdict_EMD.header.stamp = ros::Time::now();
 	finalVerdict_fixation.header.stamp = ros::Time::now();
-	_final_verdict_pub.publish(finalVerdict);
+	_final_verdict_EMD_pub.publish(finalVerdict_EMD);
 	_final_verdict_fixation_pub.publish(finalVerdict_fixation);
-	cout << "Final verdict: " << finalVerdict.s << ", " << nums.data << endl;
-	cout << "Fixation final verdict: " << finalVerdict_fixation.s<< endl;
+	cout << "EMD Final verdict: " << finalVerdict_EMD.s << ", " << nums.data << endl;
+	cout << "Fixation final verdict: " << finalVerdict_fixation.s << endl;
 	cout << "--------------------------------------------------------" << endl;
 	std_msgs::String msg_truth;
     std::stringstream ss;
-	if (finalVerdict.s == finalVerdict_fixation.s){
-		ss << myCount++ << " True; "<< finalVerdict.s << ", " << finalVerdict_fixation.s;
+	if (finalVerdict_EMD.s == finalVerdict_fixation.s){
+		ss << myCount++ << " True; "<< finalVerdict_EMD.s << ", " << finalVerdict_fixation.s;
 	}
 	else {
-		ss << myCount++ << " False; " << finalVerdict.s << ", " << finalVerdict_fixation.s;
+		ss << myCount++ << " False; " << finalVerdict_EMD.s << ", " << finalVerdict_fixation.s;
 	}
 	msg_truth.data = ss.str();
 	_truth_pub.publish(msg_truth);
@@ -452,7 +453,7 @@ void VOCUS_ROS::imageCb(const sensor_msgs::ImageConstPtr& msg, const vocus2_ros:
 
 	Mat mainImg, img;
 	float minEMD = INFINITY, minFixation = INFINITY;
-	vocus2_ros::Result finalVerdict, finalVerdict_fixation;
+	vocus2_ros::Result finalVerdict_EMD, finalVerdict_fixation;
 	std_msgs::Int16 nums;
 	mainImg = cv_ptr->image;
 
@@ -653,7 +654,7 @@ void VOCUS_ROS::imageCb(const sensor_msgs::ImageConstPtr& msg, const vocus2_ros:
 
 		if (curEMD < minEMD){
 			minEMD = curEMD;
-			finalVerdict.s = mybboxes->bounding_boxes[i].Class;
+			finalVerdict_EMD.s = mybboxes->bounding_boxes[i].Class;
 			nums.data = curEMD;
 		}
 
@@ -674,23 +675,23 @@ void VOCUS_ROS::imageCb(const sensor_msgs::ImageConstPtr& msg, const vocus2_ros:
 
 	}
 	//Set output to none if EMD is too high
-	if (minEMD>170) finalVerdict.s = "None";
+	if (minEMD>170) finalVerdict_EMD.s = "None";
 
 	//Published correct object into final verdict topic
-	finalVerdict.header.stamp = ros::Time::now();
+	finalVerdict_EMD.header.stamp = ros::Time::now();
 	finalVerdict_fixation.header.stamp = ros::Time::now();
-	_final_verdict_pub.publish(finalVerdict);
+	_final_verdict_EMD_pub.publish(finalVerdict_EMD);
 	_final_verdict_fixation_pub.publish(finalVerdict_fixation);
-	cout << "Final verdict: " << finalVerdict.s << ", " << nums.data << endl;
+	cout << "EMD Final verdict: " << finalVerdict_EMD.s << ", " << nums.data << endl;
 	cout << "Fixation final verdict: " << finalVerdict_fixation.s << endl;
 	cout << "--------------------------------------------------------" << endl;
 	std_msgs::String msg_truth;
     std::stringstream ss;
-	if (finalVerdict.s == finalVerdict_fixation.s){
-		ss << myCount++ << " True; "<< finalVerdict.s << ", " << finalVerdict_fixation.s;
+	if (finalVerdict_EMD.s == finalVerdict_fixation.s){
+		ss << myCount++ << " True; "<< finalVerdict_EMD.s << ", " << finalVerdict_fixation.s;
 	}
 	else {
-		ss << myCount++ << " False; " << finalVerdict.s << ", " << finalVerdict_fixation.s;
+		ss << myCount++ << " False; " << finalVerdict_EMD.s << ", " << finalVerdict_fixation.s;
 	}
 	msg_truth.data = ss.str();
 	_truth_pub.publish(msg_truth);
@@ -719,15 +720,39 @@ void VOCUS_ROS::imageCb_MaskRCNN(const sensor_msgs::ImageConstPtr& msg, const vo
 		return;
 	}
 
+	//Correcting gaze array
+	float lastValid_X =0.5, lastValid_Y =0.5; 
+	int mean_X, mean_Y;
+	vector<float> corrected_X, corrected_Y;
+	for(int i = 0; i<k_pixels; i++){
+		//To handle if curX,curY [estimated gaze position] is not (0,1)
+		float curX = myarray->x[i];
+		float curY = myarray->y[i];
+		if ((curX < 0)||(curX>1)) curX = lastValid_X;
+		if ((curY < 0)||(curY>1)) curY = lastValid_Y;
+		corrected_X.push_back(curX);
+		corrected_Y.push_back(curY);
+		lastValid_X = curX;
+		lastValid_Y = curY;
+	}
+	mean_X = (accumulate(corrected_X.begin(),corrected_X.end(),0.0)/k_pixels)*1280-1;
+	mean_Y = ((1-(accumulate(corrected_Y.begin(),corrected_Y.end(),0.0)/k_pixels))*720-1);
+
 	Mat mainImg, img;
 	float minEMD = INFINITY, minFixation = INFINITY;
-	vocus2_ros::Result finalVerdict, finalVerdict_fixation;
+	vocus2_ros::Result finalVerdict_EMD, finalVerdict_fixation, true_finalVerdict;
+	vector<bool> withinMask;
+	vector<float> eudDistanceforFixation;
 	std_msgs::Int16 nums;
 	mainImg = cv_ptr->image;
 
 	//Crop Image
 	for (uint i=0; i< detectron2_result->boxes.size(); i++){
-		if (detectron2_result->class_names[i] == "dining table") continue;
+		if (detectron2_result->class_names[i] == "dining table"){
+			withinMask.push_back(false);
+			eudDistanceforFixation.push_back(INFINITY);
+			continue;
+		}
 		int xmin = detectron2_result->boxes[i].x_offset; //Top left is origin
 		int ymin = detectron2_result->boxes[i].y_offset;
 		int height = detectron2_result->boxes[i].height;
@@ -747,7 +772,11 @@ void VOCUS_ROS::imageCb_MaskRCNN(const sensor_msgs::ImageConstPtr& msg, const vo
 		}
 		Mat mask_img;
 		mask_img = cv_mask_ptr->image;
-		mask_img = mask_img(Rect(xmin, ymin, width, height))/255;
+		if (mask_img.at<uchar>(mean_Y,mean_X) != 0) withinMask.push_back(true); //For determining edge cases
+		else withinMask.push_back(false);
+
+		//Apply mask to image
+		mask_img = mask_img(Rect(xmin, ymin, width, height))/255; 
 		Mat mask_img_3c[] = {mask_img, mask_img, mask_img};
 		merge(mask_img_3c, 3, mask_img); //Mask is 1 channel, merge 3 masks into 1 " 3 channel mask" then do element-wise multiplication
 		img = img.mul(mask_img);
@@ -819,12 +848,12 @@ void VOCUS_ROS::imageCb_MaskRCNN(const sensor_msgs::ImageConstPtr& msg, const vo
 		
 		//My code
 		vector<values> storage, tempStorage; //tempStorage for all value, storage for only the highest l_pixels values
-		float totalSum = 0, sdSum =0, sd;
+		float totalSum = 0, sdSum =0, sd, mean;
 		Size s = salmap.size();
 		int rows = s.height;
 		int cols = s.width;
 		int l_pixels;
-		float mean;
+
 		if (useThres){ //Use threshold (Changed in VOCUS_ROS.h)
 			float threshold = 0.8;
 			//int l_pixels; //User defined
@@ -902,17 +931,9 @@ void VOCUS_ROS::imageCb_MaskRCNN(const sensor_msgs::ImageConstPtr& msg, const vo
 			temp.col = storage[idx].col;
 			temp.euclideanDistance = calcDistance(temp.row,temp.col,rows/2,cols/2);
 			forEMD.push_back(temp.euclideanDistance);
-			float curX = myarray->x[i];
-			float curY = myarray->y[i];
-			
-			//To handle if curX,curY [estimated gaze position] is not (0,1)
-			if ((curX < 0)||(curX>1)) curX = lastValid_X;
-			if ((curY < 0)||(curY>1)) curY = lastValid_Y;
-			lastValid_X = curX;
-			lastValid_Y = curY;
-			cout << "curX: " << curX <<", curY: "<< curY << endl;
 
-			forEMD2.push_back(calcDistance(curX*1280-1, (1-curY)*720-1, (xmin+width/2), (ymin+height/2))); //Bottom Left is origin[myarray], Top Left is origin[bboxes]
+			cout << "curX: " << corrected_X[i] <<", curY: "<< corrected_Y[i] << endl;
+			forEMD2.push_back(calcDistance(corrected_X[i]*1280-1, (1-corrected_Y[i])*720-1, (xmin+width/2), (ymin+height/2))); //Bottom Left is origin[myarray], Top Left is origin[bboxes]
 			weights.push_back(1);
 			sumEuclDist+=forEMD[i];
 			sumEuclDist_gaze+=forEMD2[i];
@@ -928,11 +949,12 @@ void VOCUS_ROS::imageCb_MaskRCNN(const sensor_msgs::ImageConstPtr& msg, const vo
 		cout<< ">>>EMD:" << curEMD << ", Class:" << detectron2_result->class_names[i]<< endl;
 
 		float temp = (accumulate(forEMD2.begin(),forEMD2.end(),0))/k_pixels;
+		eudDistanceforFixation.push_back(temp);
 		cout << "temp: "<< temp << endl;
 
 		if (curEMD < minEMD){
 			minEMD = curEMD;
-			finalVerdict.s = detectron2_result->class_names[i];
+			finalVerdict_EMD.s = detectron2_result->class_names[i];
 			nums.data = curEMD;
 		}
 
@@ -953,23 +975,31 @@ void VOCUS_ROS::imageCb_MaskRCNN(const sensor_msgs::ImageConstPtr& msg, const vo
 
 	}
 	//Set output to none if EMD is too high
-	if (minEMD>180) finalVerdict.s = "None";
+	if (minEMD>180) finalVerdict_EMD.s = "None";
 
 	//Published correct object into final verdict topic
-	finalVerdict.header.stamp = ros::Time::now();
+	bool edgeCase = isEdgeCase(detectron2_result, mean_X, mean_Y, withinMask, eudDistanceforFixation);
+	true_finalVerdict.s = (edgeCase)? finalVerdict_EMD.s : finalVerdict_fixation.s;
+
+	finalVerdict_EMD.header.stamp = ros::Time::now();
 	finalVerdict_fixation.header.stamp = ros::Time::now();
-	_final_verdict_pub.publish(finalVerdict);
+	true_finalVerdict.header.stamp = ros::Time::now();
+
+	_final_verdict_EMD_pub.publish(finalVerdict_EMD);
 	_final_verdict_fixation_pub.publish(finalVerdict_fixation);
-	cout << "Final verdict: " << finalVerdict.s << ", " << nums.data << endl;
-	cout << "Fixation final verdict: " << finalVerdict_fixation.s << endl;
+	_true_final_verdict_pub.publish(true_finalVerdict);
+
+	cout << "EMD verdict: " << finalVerdict_EMD.s << ", " << nums.data << endl;
+	cout << "Fixation verdict: " << finalVerdict_fixation.s << endl;
+	cout << "Final verdict: " << true_finalVerdict.s << endl;
 	cout << "--------------------------------------------------------" << endl;
 	std_msgs::String msg_truth;
     std::stringstream ss;
-	if (finalVerdict.s == finalVerdict_fixation.s){
-		ss << myCount++ << " True; "<< finalVerdict.s << ", " << finalVerdict_fixation.s;
+	if (finalVerdict_EMD.s == finalVerdict_fixation.s){
+		ss << myCount++ << " True; "<< finalVerdict_EMD.s << ", " << finalVerdict_fixation.s << ", Edge Case: " << edgeCase;
 	}
 	else {
-		ss << myCount++ << " False; " << finalVerdict.s << ", " << finalVerdict_fixation.s;
+		ss << myCount++ << " False; " << finalVerdict_EMD.s << ", " << finalVerdict_fixation.s << ", Edge Case: " << edgeCase;
 	}
 	msg_truth.data = ss.str();
 	_truth_pub.publish(msg_truth);
@@ -1043,4 +1073,35 @@ int VOCUS_ROS::calcDistance(int x1, int y1, int x2, int y2){
 
 float VOCUS_ROS::dist(int F1, int F2){
 	return abs(F1 - F2);
+}
+
+bool VOCUS_ROS::isEdgeCase(const vocus2_ros::Result_Detectron2ConstPtr& detectron2_result, int x, int y, vector<bool>& withinMask, vector<float>& eucDistforFixation){
+	for (int i =0; i < withinMask.size(); i++){
+		cout << withinMask[i]<< endl;
+	}
+	//First Check: Check if gaze point of min euclidean distances is within the corresponding mask
+	if (withinMask[std::distance(eucDistforFixation.begin(), std::min_element(eucDistforFixation.begin(),eucDistforFixation.end()))] == false){ 
+		cout << "edgeCase Case 1" << endl;
+		return true;
+	}
+
+	//Second Check: Check if gaze exist in close proximity to multiple BBoxes
+	int count = 0; //No of overlaps, return true if count >=2
+	float tolerance = 0.1; // 10% Tolerance
+	for (uint i=0; i< detectron2_result->boxes.size(); i++){
+		if (detectron2_result->class_names[i] == "dining table") continue;
+		int xmin = detectron2_result->boxes[i].x_offset; //Top left is origin
+		int ymin = detectron2_result->boxes[i].y_offset;
+		int height = detectron2_result->boxes[i].height;
+		int width = detectron2_result->boxes[i].width; 
+		
+		// Increase by tolerance specified and check if there is intersection
+		int new_xmin = xmin - width*tolerance;
+		int new_ymin = ymin - height*tolerance;
+		int new_xmax = xmin + width + width*tolerance;
+		int new_ymax = ymin + height + height*tolerance;
+		if ((x>new_xmin && x < new_xmax) && (y>new_ymin && y< new_ymax)) count++;
+		if (count >=2) return true;
+	}
+	return false;
 }

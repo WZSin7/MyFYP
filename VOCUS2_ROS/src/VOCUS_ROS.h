@@ -71,6 +71,8 @@ public:
 
   static float dist(int F1, int F2);
 
+  bool isEdgeCase(const vocus2_ros::Result_Detectron2ConstPtr& detectron2_result, int x, int y, vector<bool>& withinMask, vector<float>& eucDistforFixation);
+
 private:
   // the VOCUS2 object that will 
   // process all the images
@@ -81,7 +83,7 @@ private:
   ros::Subscriber _cam_sub;
   image_transport::Publisher _image_pub;
   image_transport::Publisher _image_sal_pub;
-  ros::Publisher _poi_pub, _final_verdict_pub, _final_verdict_fixation_pub, _truth_pub;
+  ros::Publisher _poi_pub, _final_verdict_EMD_pub, _final_verdict_fixation_pub, _truth_pub, _true_final_verdict_pub;
   message_filters::Subscriber<sensor_msgs::Image> image_sub;
 	message_filters::Subscriber<vocus2_ros::BoundingBoxes> bboxes_sub;
   message_filters::Subscriber<vocus2_ros::GazeInfoBino_Array> array_sub;
