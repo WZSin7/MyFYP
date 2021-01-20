@@ -3,5 +3,6 @@
 		<node name="resultsTabulator" pkg="myPupilLab" type="resultsTabulator" args="" 			output="screen">
 		</node>
 		<param name="groundTruth" value="bottle" type="string" />
+		<param name="configDone" value="false" type="bool" />
 
 </launch>

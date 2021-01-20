@@ -9,7 +9,7 @@ pub_Camera_transition = rospy.Publisher('camera2',Image,queue_size=1)
 
 
 def callback(data):
-	#rospy.loginfo("Sucess!")
+	rospy.loginfo("Sucess!")
 	outmsg = GazeInfoBino_Array()
 	outmsg.x = data.x
 	outmsg.y = data.y
@@ -23,7 +23,7 @@ def image_callback(data):
 def listener():
 	rospy.init_node('parser', anonymous=True)
 
-	#rospy.Subscriber("camera/rgb/image_raw", Image, image_callback)
+	rospy.Subscriber("camera/rgb/image_raw", Image, image_callback)
 	rospy.Subscriber("gaze_array", GazeInfoBino_Array, callback)
 	rospy.spin()
 

@@ -41,7 +41,7 @@ def visualizer():
 	rospy.init_node('visualizer', anonymous=True)
 
 	# gaze_sub = message_filters.Subscriber("gaze_array2", GazeInfoBino_Array)
-	# image_sub = message_filters.Subscriber("detectron2_ros/image", Image)
+	image_sub = message_filters.Subscriber("detectron2_ros/image", Image)
 
 	gaze_sub = message_filters.Subscriber("gaze_array", GazeInfoBino_Array)
 	image_sub = message_filters.Subscriber("camera/rgb/image_raw", Image)
