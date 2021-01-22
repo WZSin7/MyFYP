@@ -1,0 +1,22 @@
+Testing setup instruction
+1) Terminal > source myFYP/bin/activate > cd pupil/pupil_src
+
+2) Terminal > roscore
+
+3) Terminal > source myFYP/bin/activate > cd cv_bridge (source install/setup.bash --extend) > cd catkin_ws (source devel/setup.bash) > rosrun myPupilLab worldCameraPub
+
+4) Terminal > source myFYP/bin/activate > cd cv_bridge (source install/setup.bash --extend) > cd catkin_ws (source devel/setup.bash) > rosrun myPupilLab gazePub
+
+5) Terminal > source detectron2/bin/activate > cd cv_bridge (source install/setup.bash --extend) > cd catkin_ws (source devel/setup.bash) > roslaunch detectron2_ros detectron2_ros.launch
+
+6) Terminal > cd cv_bridge (source install/setup.bash --extend) > cd catkin_ws (source devel/setup.bash) > rosrun vocus_ros vocus_ros_node
+
+7) Terminal > cd catkin_ws (source devel/setup.bash) > rviz [1 for Gaze position plotting, 1 for Mask-RCNN]
+
+8) Terminal > cd catkin_ws (source devel/setup.bash) > rostopic echo /truth
+
+9) Terminal > cd catkin_ws (source devel/setup.bash) > roslaunch myPupilLab tabulate.launch
+
+10) Terminal > cd catkin_ws (source devel/setup.bash) > rosparam set /configDone true > rosparam set /groundTruth xxx
+
+Video Recording, 7,8,9,10 on screen
