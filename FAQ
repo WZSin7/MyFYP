@@ -1,0 +1,83 @@
+ii) Source ROS? //NOT NEEDED, in BASHRC
+terminal >> source /opt/ros/melodic/setup.bash
+
+iii) Activate Python Virtualenv?
+terminal >> source myFYP/bin/activate
+
+iv)How to run ROS OpenVino detector
+>> Connect Realsense camera
+terminal >> cd head_pose_control-master
+>> source devel/setup.bash
+>> source /opt/intel/openvino/bin/setupvars.sh
+>> Repeat on another terminal
+>> First Terminal: roslaunch realsense2_camera rs_camera.launch
+>> Second Terminal: roslaunch head_pose_control_ros openvino_estimation.launch
+
+v) Add python script executable in ROS
+>> chmod +x mypythonscript.py
+
+vi) Run Pupil lab?
+T1 - Activate myFYP venv, cd pupil/pupil_src
+   >> python main.py capture
+T2 >> roscore
+T3 >> source myFYP venv
+   >> cd cvbridge_build_ws, >>source install/setup.bash --extend
+   >> cd catkin_ws, >> source devel/setup.bash
+   >> rosrun myPupilLab worldCameraPub.py
+T4 >> source myFYP venv
+   >> cd cvbridge_build_ws, >>source install/setup.bash --extend
+   >> cd catkin_ws, >> source devel/setup.bash
+   >> rosrun myPupilLab gazePub.py
+T5 >> source myFYP venv
+   >> cd cvbridge_build_ws, >>source install/setup.bash --extend
+   >> cd catkin_ws, >> source devel/setup.bash
+   >> roslaunch darknet_ros darknet_ros.launch
+T6 >> cd cvbridge_build_ws, >>source install/setup.bash --extend
+   >> cd catkin_ws, >> source devel/setup.bash
+   >> rosrun vocus2_ros vocus2_ros_node [After changes]
+   >> rosrun vocus2_ros vocus2_ros_node image_in:=/darknet_ros/detection_image image_out:=most_salient_region [Before changes]
+T7 >> rviz//rostopic echo /final_verdict or /truth
+T8 >> cd catkin_ws, >> source devel/setup.bash
+   >> roslaunch myPupilLab tabulate.launch (To run counter), use rosparam get(or)set /groundTruth
+T9 >> source detectron2 venv
+   >> cd cvbridge_build_ws, >>source install/setup.bash --extend
+   >> cd catkin_ws, >> source devel/setup.bash
+   >> roslaunch detectron2_ros detectron2_ros.launch
+
+vii) Build ROS systems
+# In your catkin workspace [Delete build if downloaded workspace]
+$ cd ~/catkin_ws
+$ catkin_make [old]
+$ catkin build // catkin build [name of specific package]
+
+viii) Updates needed after adding ROS stuff
+catkin_w >> src >> myPupilLab >> CMakeLists.txt & package.xml
+
+ix) ValueError: int is not allowed for map key, msgpack error
+Use versions <=0.6 [Launch myFyp venv]
+
+x) How to compile library from source
+-Download the file tar.gz/zip (unzip)
+-cd to inside the file >>mkdir build and >> cd build
+>> cmake .. & >>make -j4 & >> make install
+
+xi) How to edit bash.rc
+>> gedit ~/.bashrc and and whatever needed
+>> source ~/.bashrc
+
+xii) Source cv_bridge [YOLO ROS]
+>> cd cvbridge_build_ws
+>> source install/setup.bash --extend
+
+xiii) How to change config files for YOLO_ROS
+Change path in '/home/sinwz/catkin_ws/src/darknet_ros/darknet_ros/src/YoloObjectDetector.cpp'
+
+xiv) How and what to record for rosbag?
+>> rosbag record /gaze_array /gaze_info_mono /gaze_info_bino /camera/rgb/image_raw
+
+xv)Detectron 2 problem with running the launch file?
+Change detectron2_ros.py. Change path to weights and changed python interpreter to python3
+>> detectron2_ros.py >> Line 33 #Changed path to weights file (Downloaded from Zoo model)
+>> detectron2_ros.py >> Line 128 #Changed dtype=encoding to np.uint8
+
+
