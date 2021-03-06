@@ -10,17 +10,6 @@ from sensor_msgs.msg import Image, CameraInfo
 from cv_bridge import CvBridge, CvBridgeError
 # from std_msgs.msg import String
 
-context = zmq.Context()
-# open a req port to talk to pupil
-addr = '127.0.0.1'  # remote ip or localhost
-req_port = "50020"  # same as in the pupil remote gui
-req = context.socket(zmq.REQ)
-req.connect("tcp://{}:{}".format(addr, req_port))
-
-# ask for the sub port
-req.send_string('SUB_PORT')
-sub_port = req.recv_string()
-
 # send notification:
 def notify(notification):
 	"""Sends ``notification`` to Pupil Remote"""
@@ -30,16 +19,6 @@ def notify(notification):
 	req.send(payload)
 	return req.recv_string()
 
-# open a sub port to listen to pupil
-sub = context.socket(zmq.SUB)
-sub.connect("tcp://{}:{}".format(addr, sub_port))
-
-# set subscriptions to topics
-# recv just pupil/gaze/notifications
-sub.setsockopt_string(zmq.SUBSCRIBE, 'frame.')
-
-#pub_world_image = rospy.Publisher('world_Image',WorldCameraImage,queue_size=10)
-test_Img_Pub = rospy.Publisher('/camera/rgb/image_raw',Image, queue_size=10)
 def recv_from_sub():
 	'''Recv a message with topic, payload.
 	Topic is a utf-8 encoded string. Returned as unicode object.
@@ -47,6 +26,9 @@ def recv_from_sub():
 	Any addional message frames will be added as a list
 	in the payload dict with key: '__raw_data__' .
 	'''
+	# if not poller.poll(50):
+	# 	print("Error from Pupil Labs, terminating...")
+	# 	return
 	topic = sub.recv_string()
 	payload = unpackb(sub.recv(), encoding='utf-8')
 	extra_frames = []
@@ -55,12 +37,6 @@ def recv_from_sub():
 	if extra_frames:
 		payload['__raw_data__'] = extra_frames
 	return topic, payload
-
-recent_world = None
-
-FRAME_FORMAT = 'bgr' #Image format, same as the one in Pupil Capture
-
-notify({'subject': 'frame_publishing.set_format', 'format': FRAME_FORMAT})
 
 def world_Image_parser(message):
 	#Parse gazeInfo into a message.
@@ -80,12 +56,44 @@ def world_Image_parser(message):
 
 
 if __name__ == "__main__":
+	#pub_world_image = rospy.Publisher('world_Image',WorldCameraImage,queue_size=10)
+	test_Img_Pub = rospy.Publisher('/camera/rgb/image_raw',Image, queue_size=10)
+
+	context = zmq.Context()
+	# open a req port to talk to pupil
+	addr = '127.0.0.1'  # remote ip or localhost
+	req_port = "50020"  # same as in the pupil remote gui
+	req = context.socket(zmq.REQ)
+	req.setsockopt(zmq.LINGER, 0)
+	req.connect("tcp://{}:{}".format(addr, req_port))
+
+	# ask for the sub port
+	req.send_string('SUB_PORT')
+	sub_port = req.recv_string()
 	rospy.loginfo("Starting World Image publisher.")
 	print("Starting World Image publisher")
 	rospy.init_node('worldImagePublisher')
 	print("listening for socket message....")
 	bridge = CvBridge()
 	#cap = cv2.VideoCapture(0)
+
+	# open a sub port to listen to pupil
+	sub = context.socket(zmq.SUB)
+	sub.connect("tcp://{}:{}".format(addr, sub_port))
+
+	# Use poll for timeouts:
+	poller = zmq.Poller()
+	poller.register(sub, zmq.POLLIN)
+
+	# set subscriptions to topics
+	# recv just pupil/gaze/notifications
+	sub.setsockopt_string(zmq.SUBSCRIBE, 'frame.')
+
+	recent_world = None
+
+	FRAME_FORMAT = 'bgr' #Image format, same as the one in Pupil Capture
+
+	notify({'subject': 'frame_publishing.set_format', 'format': FRAME_FORMAT})
 
 	while not rospy.is_shutdown():
 		#ret, frame = cap.read()
@@ -104,11 +112,20 @@ if __name__ == "__main__":
 				# cv2.waitKey(1)
 				# pass
 			try:
-				print("Publish Image to /camera/rgb/image_raw")
+				#print("Publish Image to /camera/rgb/image_raw")
+				print("worldCamera Status: Working!")
 				image_msg = bridge.cv2_to_imgmsg(recent_world)
 				image_msg.header.stamp = rospy.Time.now()
 				test_Img_Pub.publish(image_msg)
 			except CvBridgeError as e:
 				print(e)
+
+	print("Terminated")
+	req.close()
+	sub.close()
+	context.term()
+
+
+	
 	
 

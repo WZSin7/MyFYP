@@ -11,7 +11,7 @@ using namespace message_filters;
 using namespace std;
 
 //Global variables
-int emd_true = 0, emd_false=0, fixation_true=0, fixation_false=0, final_true=0, final_false=0;
+int emd_true = 0, emd_false=0, fixation_true=0, fixation_false=0, final_true=0, final_false=0, totalEdgeCase =0, totalCorrectEdgeCase =0, totalError = 0;
 
 void callback(const myPupilLab::ResultConstPtr& EMD, const myPupilLab::ResultConstPtr& fixation, const myPupilLab::ResultConstPtr& final){
 	std::string currentTruth;
@@ -28,6 +28,14 @@ void callback(const myPupilLab::ResultConstPtr& EMD, const myPupilLab::ResultCon
 			if(final->s == currentTruth) final_true++;
 			else final_false++;
 
+			auto ptr = find(begin(final->class_names),end(final->class_names),currentTruth);
+			if(ptr == end(final->class_names)) totalError++;
+
+			if(final->isEdgeCase == true && ptr != end(final->class_names)){
+				totalEdgeCase++;
+				if(final->s == currentTruth) totalCorrectEdgeCase++;
+			}
+
 			cout << "Current Truth: " << currentTruth << endl;
 			cout << endl;
 
@@ -41,7 +49,14 @@ void callback(const myPupilLab::ResultConstPtr& EMD, const myPupilLab::ResultCon
 
 			cout << "Final:" << endl;
 			cout << "Positive: " << final_true << ", Negative: " << final_false << endl;
+			cout << endl;
 
+
+			cout << "No. of error in Mask-RCNN detection: " << totalError<< endl;
+			cout << endl;
+
+			cout << "Total Edge Case detected: " << totalEdgeCase << endl;
+			cout << "Total Correct Edge Case detected: " << totalCorrectEdgeCase << endl;
 
 			cout << "-------------------------------------------------------------------" << endl;
 			cout << endl;

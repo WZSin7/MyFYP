@@ -40,10 +40,10 @@ def gaze_parser_bino(message):
 	
 	outmsg = GazeInfoBino()
 
-	outmsg.eye_centers_3d_0 = message[b'eye_centers_3d'][0]
-	outmsg.eye_centers_3d_1 = message[b'eye_centers_3d'][1]
-	outmsg.gaze_normals_3d_0 = message[b'gaze_normals_3d'][0]
-	outmsg.gaze_normals_3d_1 = message[b'gaze_normals_3d'][1]
+	outmsg.eye_centers_3d_0 = message[b'eye_centers_3d'][b'0']
+	outmsg.eye_centers_3d_1 = message[b'eye_centers_3d'][b'1']
+	outmsg.gaze_normals_3d_0 = message[b'gaze_normals_3d'][b'0']
+	outmsg.gaze_normals_3d_1 = message[b'gaze_normals_3d'][b'1']
 	outmsg.gaze_point_3d = message[b'gaze_point_3d']
 	outmsg.norm_pos = message[b'norm_pos']
 	outmsg.confidence = message[b'confidence']
@@ -74,16 +74,17 @@ def pub_array():
 	outmsg.x = x_pos
 	outmsg.y = y_pos
 	outmsg.header.stamp = rospy.Time.now()
+	print("gazeArrayPub Status: Working!")
 	pub_gaze_bino_60.publish(outmsg)
 
 
 if __name__ == "__main__":
 	rospy.loginfo("Starting gaze publisher.")
-	print("Starting gaze publisher")
+	#print("Starting gaze publisher")
 
 	rospy.init_node('gazePublisher')
 
-	print("listening for socket message....")
+	#print("listening for socket message....")
 	x_pos = []
 	y_pos = []
 	count = 0
@@ -91,14 +92,15 @@ if __name__ == "__main__":
 		topic, payload = subscriber.recv_multipart()
 		message = msgpack.loads(payload)
 		if topic == b'gaze.3d.01.': #Binocular gaze datum, only occurs when both eyes confidence is higher than a threshold
+			#print(message[b'eye_centers_3d'][b'0'])
 			outmsg = gaze_parser_bino(message)
 			if not outmsg == -1:
-				rospy.loginfo("Bino")
-				rospy.loginfo(outmsg.confidence)
-				rospy.loginfo(outmsg.norm_pos) 
+				#rospy.loginfo("Bino")
+				#rospy.loginfo(outmsg.confidence)
+				#rospy.loginfo(outmsg.norm_pos) 
 				pub_gaze_bino.publish(outmsg)
 				count +=1
-				print(count)
+				#print(count)
 				if count == 30:	
 					pub_array()
 					count = 0
@@ -108,12 +110,12 @@ if __name__ == "__main__":
 			outmsg = gaze_parser_mono(message)
 			if not outmsg == -1:
 				if outmsg.confidence > 0.75:
-					rospy.loginfo("Mono")
-					rospy.loginfo(outmsg.confidence)
-					rospy.loginfo(outmsg.norm_pos) 
+					#rospy.loginfo("Mono")
+					#rospy.loginfo(outmsg.confidence)
+					#rospy.loginfo(outmsg.norm_pos) 
 					pub_gaze_mono.publish(outmsg)
 					count +=1
-					print(count)
+					#print(count)
 					if count == 30:	
 						pub_array()
 						count = 0
