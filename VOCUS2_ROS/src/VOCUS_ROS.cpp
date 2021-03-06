@@ -23,15 +23,20 @@
 #include "HelperFunctions.h"
 #include "myEMD.h"
 
+#include <algorithm>
+#include <numeric>
+#include <opencv2/opencv.hpp>
+#include <random>
+
 #include <vocus2_ros/BoundingBox.h>
 #include <vocus2_ros/BoundingBoxes.h>
 #include <vocus2_ros/GazeInfoBino_Array.h>
 #include <vocus2_ros/Result.h>
 #include <vocus2_ros/Result_Detectron2.h>
-#include <opencv2/opencv.hpp>
-#include <random>
+
 #include "std_msgs/String.h"
 #include <std_msgs/Int16.h>
+
 
 using namespace cv;
 
@@ -40,20 +45,19 @@ VOCUS_ROS::VOCUS_ROS() : _it(_nh) //Constructor [assign '_nh' to '_it']
 {
 	_f = boost::bind(&VOCUS_ROS::callback, this, _1, _2);
 	_server.setCallback(_f);
-	//_cam_sub = _nh.subscribe("/darknet_ros/detection_image", 1, &VOCUS_ROS::imageCb, this);
 
 	//Added by me
 	if (useMaskRCNN == true){
-		image_sub.subscribe(_nh, "/detectron2_ros/image", 1);
-		rcnn_result_sub.subscribe(_nh, "/detectron2_ros/result", 1);
-		array_sub.subscribe(_nh, "gaze_array", 1); //Change accordingly
-		sync_MaskRCNN.reset(new Sync_MaskRCNN(MaskRCNN_Policy(10), image_sub, rcnn_result_sub, array_sub));
+		image_sub.subscribe(_nh, "/detectron2_ros/image", 5);
+		rcnn_result_sub.subscribe(_nh, "/detectron2_ros/result", 5);
+		array_sub.subscribe(_nh, "gaze_array", 5); //Change accordingly
+		sync_MaskRCNN.reset(new Sync_MaskRCNN(MaskRCNN_Policy(10), image_sub, rcnn_result_sub, array_sub)); //10 is queue size
 		sync_MaskRCNN->registerCallback(boost::bind(&VOCUS_ROS::imageCb_MaskRCNN, this, _1, _2, _3));
 	}
 	else{
 		image_sub.subscribe(_nh, "/darknet_ros/detection_image", 1);
 		bboxes_sub.subscribe(_nh, "/darknet_ros/bounding_boxes", 1);
-		array_sub.subscribe(_nh, "gaze_array2", 1);
+		array_sub.subscribe(_nh, "gaze_array", 1);
 		// sync.reset(new Sync(MySyncPolicy(10), image_sub, bboxes_sub));
 		// sync->registerCallback(boost::bind(&VOCUS_ROS::imageCb2, this, _1, _2));
 		sync.reset(new Sync(MySyncPolicy(10), image_sub, bboxes_sub, array_sub));
@@ -61,9 +65,6 @@ VOCUS_ROS::VOCUS_ROS() : _it(_nh) //Constructor [assign '_nh' to '_it']
 	}
 	//End of added by me
 
-	//_image_sub = _it.subscribe("/usb_cam/image_raw", 1,
-	//	&VOCUS_ROS::imageCb, this);
-	//_image_pub = _it.advertise("/image_converter/output_video", 1);
 	_image_pub = _it.advertise("most_salient_region", 1);
 	_image_sal_pub = _it.advertise("saliency_image_out", 1); //Potentially important
     _poi_pub = _nh.advertise<geometry_msgs::PointStamped>("saliency_poi", 1);
@@ -430,11 +431,9 @@ void VOCUS_ROS::imageCb2(const sensor_msgs::ImageConstPtr& msg, const vocus2_ros
 
 void VOCUS_ROS::imageCb(const sensor_msgs::ImageConstPtr& msg, const vocus2_ros::BoundingBoxesConstPtr& mybboxes, const vocus2_ros::GazeInfoBino_ArrayConstPtr& myarray)
 {	
-	ROS_INFO("callback");
 	cout << "Number of bounding box: " << mybboxes->bounding_boxes.size() << endl;
     if(RESTORE_DEFAULT) // if the reset checkbox has been ticked, we restore the default configuration
 	{
-		ROS_INFO("RESTORE_DEFAULT");
 		restoreDefaultConfiguration();
 		RESTORE_DEFAULT = false;
 	}
@@ -442,7 +441,6 @@ void VOCUS_ROS::imageCb(const sensor_msgs::ImageConstPtr& msg, const vocus2_ros:
 	cv_bridge::CvImagePtr cv_ptr;
 	try //Here
 	{	
-		ROS_INFO("CV_BRIDGE");
 		cv_ptr = cv_bridge::toCvCopy(msg); // Change needed here
 	}
 	catch (cv_bridge::Exception& e)
@@ -451,9 +449,29 @@ void VOCUS_ROS::imageCb(const sensor_msgs::ImageConstPtr& msg, const vocus2_ros:
 		return;
 	}
 
+	//Correcting gaze array
+	float lastValid_X =0.5, lastValid_Y =0.5; 
+	int mean_X, mean_Y;
+	vector<float> corrected_X, corrected_Y;
+	for(int i = 0; i<k_pixels; i++){
+		//To handle if curX,curY [estimated gaze position] is not (0,1)
+		float curX = myarray->x[i];
+		float curY = myarray->y[i];
+		if ((curX < 0)||(curX>1)) curX = lastValid_X;
+		if ((curY < 0)||(curY>1)) curY = lastValid_Y;
+		corrected_X.push_back(curX);
+		corrected_Y.push_back(curY);
+		lastValid_X = curX;
+		lastValid_Y = curY;
+	}
+	mean_X = (accumulate(corrected_X.begin(),corrected_X.end(),0.0)/k_pixels)*1280-1;
+	mean_Y = ((1-(accumulate(corrected_Y.begin(),corrected_Y.end(),0.0)/k_pixels))*720-1);
+
 	Mat mainImg, img;
 	float minEMD = INFINITY, minFixation = INFINITY;
-	vocus2_ros::Result finalVerdict_EMD, finalVerdict_fixation;
+	vocus2_ros::Result finalVerdict_EMD, finalVerdict_fixation, true_finalVerdict;
+	vector<bool> withinMask;
+	vector<float> eudDistanceforFixation;
 	std_msgs::Int16 nums;
 	mainImg = cv_ptr->image;
 
@@ -472,7 +490,6 @@ void VOCUS_ROS::imageCb(const sensor_msgs::ImageConstPtr& msg, const vocus2_ros:
 
 		if (TOPDOWN_LEARN == 1)
 		{	
-			ROS_INFO("TOPDOWN");
 			Rect ROI = annotateROI(img);
 
 		//compute feature vector
@@ -491,7 +508,6 @@ void VOCUS_ROS::imageCb(const sensor_msgs::ImageConstPtr& msg, const vocus2_ros:
 		}
 		if (TOPDOWN_SEARCH == 1 && HAS_LEARNED)
 		{
-			ROS_INFO("TOPDOWN//HASLEARNED");
 			double alpha = 0;
 			salmap = _vocus.td_search(alpha);
 			if(_cfg.normalize){
@@ -504,7 +520,6 @@ void VOCUS_ROS::imageCb(const sensor_msgs::ImageConstPtr& msg, const vocus2_ros:
 		}
 		else //Here
 		{
-			ROS_INFO("TOPDOWN//HASLEARNED--ELSE");
 			salmap = _vocus.compute_salmap();
 			if(COMPUTE_CBIAS)
 				salmap = _vocus.add_center_bias(CENTER_BIAS);
@@ -542,7 +557,7 @@ void VOCUS_ROS::imageCb(const sensor_msgs::ImageConstPtr& msg, const vocus2_ros:
 		if (useThres){ //Use threshold (Changed in VOCUS_ROS.h)
 			float threshold = 0.8;
 			//int l_pixels; //User defined
-			cout << "No of rows(y): " << rows << ", No of cols(x): " << cols << endl;
+			//cout << "No of rows(y): " << rows << ", No of cols(x): " << cols << endl;
 
 			for (int i = 0; i<rows; ++i){
 				for(int j =0; j<cols; j++){
@@ -555,6 +570,7 @@ void VOCUS_ROS::imageCb(const sensor_msgs::ImageConstPtr& msg, const vocus2_ros:
 				}
 			}
 
+			if(isnan(tempStorage[0].intensity)) continue;
 			l_pixels = tempStorage.size();
 			//sortIntensity(tempStorage); //Sort in according to the function
 
@@ -564,9 +580,9 @@ void VOCUS_ROS::imageCb(const sensor_msgs::ImageConstPtr& msg, const vocus2_ros:
 			}
 		}
 		else{ // Use fixed l_pixels
-			l_pixels = 4000; //User defined
-			if(l_pixels > rows*cols) l_pixels = rows*cols;
-			cout << "No of rows(y): " << rows << ", No of cols(x): " << cols << endl;
+			l_pixels = rows*cols*0.2; //User defined
+			//if(l_pixels > rows*cols) l_pixels = rows*cols;
+			//cout << "No of rows(y): " << rows << ", No of cols(x): " << cols << endl;
 
 			for (int i = 0; i<rows; ++i){
 				for(int j =0; j<cols; j++){
@@ -592,15 +608,14 @@ void VOCUS_ROS::imageCb(const sensor_msgs::ImageConstPtr& msg, const vocus2_ros:
 			sdSum += pow((storage[i].intensity-mean),2);
 		}
 		sd = sqrt(sdSum/l_pixels);
-		cout << "Mean is " << mean << endl;
-		cout << "Standard Deviation is " << sd << endl;
-		cout << "Precentage of l_pixels over bounding boxes:" << float(l_pixels)/float((rows*cols))*100 <<"%" << endl;
+		//cout << "Mean is " << mean << endl;
+		//cout << "Standard Deviation is " << sd << endl;
+		//cout << "Precentage of l_pixels over bounding boxes:" << float(l_pixels)/float((rows*cols))*100 <<"%" << endl;
 
 		//For Gaussian Distrubtion
 		std::random_device rd;
 		std::mt19937 gen(rd());
 		float sample, curEMD;
-		vector<finalValues> hypoGazePoints;
 		vector<int> forEMD, forEMD2;
 		vector<float> weights;
 		float sumEuclDist=0,sumEuclDist_gaze = 0, meanEuclDist,meanEuclDist_gaze, lastValid_X =0.5, lastValid_Y =0.5;
@@ -616,41 +631,25 @@ void VOCUS_ROS::imageCb(const sensor_msgs::ImageConstPtr& msg, const vocus2_ros:
 			temp.col = storage[idx].col;
 			temp.euclideanDistance = calcDistance(temp.row,temp.col,rows/2,cols/2);
 			forEMD.push_back(temp.euclideanDistance);
-			float curX = myarray->x[i];
-			float curY = myarray->y[i];
-			
-			//To handle if curX,curY [estimated gaze position] is not (0,1)
-			if ((curX < 0)||(curX>1)) curX = lastValid_X;
-			if ((curY < 0)||(curY>1)) curY = lastValid_Y;
-			lastValid_X = curX;
-			lastValid_Y = curY;
-			cout << "curX: " << curX <<", curY: "<< curY << endl;
 
-			forEMD2.push_back(calcDistance(curX*1280-1, (1-curY)*720-1, (xmin+xdiff/2), (ymin+ydiff/2))); //Bottom Left is origin[myarray], Top Left is origin[bboxes]
+			forEMD2.push_back(calcDistance(corrected_X[i]*1280-1, (1-corrected_Y[i])*720-1, (xmin+xdiff/2), (ymin+ydiff/2))); //Bottom Left is origin[myarray], Top Left is origin[bboxes]
 			weights.push_back(1);
 			sumEuclDist+=forEMD[i];
 			sumEuclDist_gaze+=forEMD2[i];
-			hypoGazePoints.push_back(temp);
 		}
 		meanEuclDist = sumEuclDist/float(k_pixels);
 		meanEuclDist_gaze = sumEuclDist_gaze/float(k_pixels);
-		cout << "Average Euclidean Distance for saliency map: " << meanEuclDist<< endl;
-		cout << "Average Euclidean Distance for gaze points: " << meanEuclDist_gaze<< endl;
+		//cout << "Average Euclidean Distance for saliency map: " << meanEuclDist<< endl;
+		//cout << "Average Euclidean Distance for gaze points: " << meanEuclDist_gaze<< endl;
 		signature_t s1 = {k_pixels, forEMD, weights};
 		signature_t s2 = {k_pixels, forEMD2, weights};
-		//cout << "For EMD1: " << endl;
-		// for (int i=0; i<forEMD.size();i++){
-		// 	cout<<forEMD[i]<<endl;
-		// }
-		// cout << "For EMD2: " << endl;
-		// for (int i=0; i<forEMD2.size();i++){ 
-		// 	cout<<forEMD2[i]<<endl;
-		// }
+
 		curEMD = emd(&s1, &s2, VOCUS_ROS::dist, NULL, NULL);
-		cout<< ">>>EMD:" << curEMD << ", Class:" << mybboxes->bounding_boxes[i].Class << endl;
+		// cout<< ">>>EMD:" << curEMD << ", Class:" << mybboxes->bounding_boxes[i].Class << endl;
 
 		float temp = (accumulate(forEMD2.begin(),forEMD2.end(),0))/k_pixels;
-		cout << "temp: "<< temp << endl;
+		eudDistanceforFixation.push_back(temp);
+		// cout << "temp: "<< temp << endl;
 
 		if (curEMD < minEMD){
 			minEMD = curEMD;
@@ -670,20 +669,22 @@ void VOCUS_ROS::imageCb(const sensor_msgs::ImageConstPtr& msg, const vocus2_ros:
 		salmap.convertTo(salmap, CV_8UC1);
 		cv_ptr->image = salmap;
 		cv_ptr->encoding = sensor_msgs::image_encodings::MONO8;
-		ROS_INFO("SAL_PUB");
 		_image_sal_pub.publish(cv_ptr->toImageMsg());
 
 	}
 	//Set output to none if EMD is too high
 	if (minEMD>170) finalVerdict_EMD.s = "None";
+	if (minFixation>170) finalVerdict_fixation.s = "None";
 
 	//Published correct object into final verdict topic
 	finalVerdict_EMD.header.stamp = ros::Time::now();
 	finalVerdict_fixation.header.stamp = ros::Time::now();
 	_final_verdict_EMD_pub.publish(finalVerdict_EMD);
 	_final_verdict_fixation_pub.publish(finalVerdict_fixation);
-	cout << "EMD Final verdict: " << finalVerdict_EMD.s << ", " << nums.data << endl;
-	cout << "Fixation final verdict: " << finalVerdict_fixation.s << endl;
+
+	cout << "--------------------------------------------------------" << endl;
+	cout << "EMD verdict: " << finalVerdict_EMD.s << ", " << nums.data << endl;
+	cout << "Fixation verdict: " << finalVerdict_fixation.s << endl;
 	cout << "--------------------------------------------------------" << endl;
 	std_msgs::String msg_truth;
     std::stringstream ss;
@@ -703,7 +704,6 @@ void VOCUS_ROS::imageCb_MaskRCNN(const sensor_msgs::ImageConstPtr& msg, const vo
 	cout << "Number of bounding box: " << detectron2_result->boxes.size() << endl;
     if(RESTORE_DEFAULT) // if the reset checkbox has been ticked, we restore the default configuration
 	{
-		ROS_INFO("RESTORE_DEFAULT");
 		restoreDefaultConfiguration();
 		RESTORE_DEFAULT = false;
 	}
@@ -711,7 +711,6 @@ void VOCUS_ROS::imageCb_MaskRCNN(const sensor_msgs::ImageConstPtr& msg, const vo
 	cv_bridge::CvImagePtr cv_ptr;
 	try //Here
 	{	
-		ROS_INFO("CV_BRIDGE");
 		cv_ptr = cv_bridge::toCvCopy(msg); // Change needed here
 	}
 	catch (cv_bridge::Exception& e)
@@ -735,11 +734,12 @@ void VOCUS_ROS::imageCb_MaskRCNN(const sensor_msgs::ImageConstPtr& msg, const vo
 		lastValid_X = curX;
 		lastValid_Y = curY;
 	}
-	mean_X = (accumulate(corrected_X.begin(),corrected_X.end(),0.0)/k_pixels)*1280-1;
-	mean_Y = ((1-(accumulate(corrected_Y.begin(),corrected_Y.end(),0.0)/k_pixels))*720-1);
+	mean_X = (accumulate(corrected_X.begin(),corrected_X.end(),0.0)/k_pixels)*1280-1; //1280
+	mean_Y = ((1-(accumulate(corrected_Y.begin(),corrected_Y.end(),0.0)/k_pixels))*720-1); //720
+	// cout << "mean_X: " << mean_X <<", mean_Y: " << mean_Y << endl;
 
 	Mat mainImg, img;
-	float minEMD = INFINITY, minFixation = INFINITY;
+	float minEMD = INFINITY, minFixation = INFINITY, minSDforSalmap;
 	vocus2_ros::Result finalVerdict_EMD, finalVerdict_fixation, true_finalVerdict;
 	vector<bool> withinMask;
 	vector<float> eudDistanceforFixation;
@@ -748,7 +748,7 @@ void VOCUS_ROS::imageCb_MaskRCNN(const sensor_msgs::ImageConstPtr& msg, const vo
 
 	//Crop Image
 	for (uint i=0; i< detectron2_result->boxes.size(); i++){
-		if (detectron2_result->class_names[i] == "dining table"){
+		if (find(objectToCheck.begin(),objectToCheck.end(),detectron2_result->class_names[i]) == objectToCheck.end()){
 			withinMask.push_back(false);
 			eudDistanceforFixation.push_back(INFINITY);
 			continue;
@@ -762,7 +762,6 @@ void VOCUS_ROS::imageCb_MaskRCNN(const sensor_msgs::ImageConstPtr& msg, const vo
 		cv_bridge::CvImagePtr cv_mask_ptr;
 		try //Here
 		{	
-			ROS_INFO("CV_BRIDGE_Mask");
 			cv_mask_ptr = cv_bridge::toCvCopy(detectron2_result->masks[i]); // Change needed here
 		}
 		catch (cv_bridge::Exception& e)
@@ -775,7 +774,7 @@ void VOCUS_ROS::imageCb_MaskRCNN(const sensor_msgs::ImageConstPtr& msg, const vo
 		if (mask_img.at<uchar>(mean_Y,mean_X) != 0) withinMask.push_back(true); //For determining edge cases
 		else withinMask.push_back(false);
 
-		//Apply mask to image
+		//Apply mask to image, so that background of the mask is filtered
 		mask_img = mask_img(Rect(xmin, ymin, width, height))/255; 
 		Mat mask_img_3c[] = {mask_img, mask_img, mask_img};
 		merge(mask_img_3c, 3, mask_img); //Mask is 1 channel, merge 3 masks into 1 " 3 channel mask" then do element-wise multiplication
@@ -787,7 +786,6 @@ void VOCUS_ROS::imageCb_MaskRCNN(const sensor_msgs::ImageConstPtr& msg, const vo
 
 		if (TOPDOWN_LEARN == 1)
 		{	
-			ROS_INFO("TOPDOWN");
 			Rect ROI = annotateROI(img);
 
 		//compute feature vector
@@ -806,7 +804,6 @@ void VOCUS_ROS::imageCb_MaskRCNN(const sensor_msgs::ImageConstPtr& msg, const vo
 		}
 		if (TOPDOWN_SEARCH == 1 && HAS_LEARNED)
 		{
-			ROS_INFO("TOPDOWN//HASLEARNED");
 			double alpha = 0;
 			salmap = _vocus.td_search(alpha);
 			if(_cfg.normalize){
@@ -819,7 +816,6 @@ void VOCUS_ROS::imageCb_MaskRCNN(const sensor_msgs::ImageConstPtr& msg, const vo
 		}
 		else //Here
 		{
-			ROS_INFO("TOPDOWN//HASLEARNED--ELSE");
 			salmap = _vocus.compute_salmap();
 			if(COMPUTE_CBIAS)
 				salmap = _vocus.add_center_bias(CENTER_BIAS);
@@ -857,7 +853,7 @@ void VOCUS_ROS::imageCb_MaskRCNN(const sensor_msgs::ImageConstPtr& msg, const vo
 		if (useThres){ //Use threshold (Changed in VOCUS_ROS.h)
 			float threshold = 0.8;
 			//int l_pixels; //User defined
-			cout << "No of rows(y): " << rows << ", No of cols(x): " << cols << endl;
+			// cout << "No of rows(y): " << rows << ", No of cols(x): " << cols << endl;
 
 			for (int i = 0; i<rows; ++i){
 				for(int j =0; j<cols; j++){
@@ -872,7 +868,6 @@ void VOCUS_ROS::imageCb_MaskRCNN(const sensor_msgs::ImageConstPtr& msg, const vo
 
 			if(isnan(tempStorage[0].intensity)) continue;
 			l_pixels = tempStorage.size();
-			//sortIntensity(tempStorage); //Sort in accordance to the function
 
 			for(int i=0; i<l_pixels; i++){
 				storage.push_back(tempStorage[i]);
@@ -880,9 +875,9 @@ void VOCUS_ROS::imageCb_MaskRCNN(const sensor_msgs::ImageConstPtr& msg, const vo
 			}
 		}
 		else{ // Use fixed l_pixels
-			l_pixels = 4000; //User defined
-			if(l_pixels > rows*cols) l_pixels = rows*cols;
-			cout << "No of rows(y): " << rows << ", No of cols(x): " << cols << endl;
+			l_pixels = rows*cols*0.2; //User defined
+			//if(l_pixels > rows*cols) l_pixels = rows*cols;
+			//cout << "No of rows(y): " << rows << ", No of cols(x): " << cols << endl;
 
 			for (int i = 0; i<rows; ++i){
 				for(int j =0; j<cols; j++){
@@ -908,9 +903,6 @@ void VOCUS_ROS::imageCb_MaskRCNN(const sensor_msgs::ImageConstPtr& msg, const vo
 			sdSum += pow((storage[i].intensity-mean),2);
 		}
 		sd = sqrt(sdSum/l_pixels);
-		cout << "Mean is " << mean << endl;
-		cout << "Standard Deviation is " << sd << endl;
-		cout << "Precentage of l_pixels over bounding boxes:" << float(l_pixels)/float((rows*cols))*100 <<"%" << endl;
 
 		//For Gaussian Distrubtion
 		std::random_device rd;
@@ -918,7 +910,7 @@ void VOCUS_ROS::imageCb_MaskRCNN(const sensor_msgs::ImageConstPtr& msg, const vo
 		float sample, curEMD;
 		vector<int> forEMD, forEMD2;
 		vector<float> weights;
-		float sumEuclDist=0,sumEuclDist_gaze = 0, meanEuclDist,meanEuclDist_gaze, lastValid_X =0.5, lastValid_Y =0.5;
+		float meanEuclDist,meanEuclDist_gaze, sdEuclDist, sdEuclDist_gaze;
 		std::normal_distribution<float> d(mean, sd);
 		for(int i = 0; i<k_pixels; i++){
 			while(true){
@@ -932,28 +924,30 @@ void VOCUS_ROS::imageCb_MaskRCNN(const sensor_msgs::ImageConstPtr& msg, const vo
 			temp.euclideanDistance = calcDistance(temp.row,temp.col,rows/2,cols/2);
 			forEMD.push_back(temp.euclideanDistance);
 
-			cout << "curX: " << corrected_X[i] <<", curY: "<< corrected_Y[i] << endl;
+			//cout << "curX: " << corrected_X[i] <<", curY: "<< corrected_Y[i] << endl;
 			forEMD2.push_back(calcDistance(corrected_X[i]*1280-1, (1-corrected_Y[i])*720-1, (xmin+width/2), (ymin+height/2))); //Bottom Left is origin[myarray], Top Left is origin[bboxes]
 			weights.push_back(1);
-			sumEuclDist+=forEMD[i];
-			sumEuclDist_gaze+=forEMD2[i];
 		}
-		meanEuclDist = sumEuclDist/float(k_pixels);
-		meanEuclDist_gaze = sumEuclDist_gaze/float(k_pixels);
-		cout << "Average Euclidean Distance for saliency map: " << meanEuclDist<< endl;
-		cout << "Average Euclidean Distance for gaze points: " << meanEuclDist_gaze<< endl;
+
+		vector<float> diff(forEMD.size());
+		float sum = accumulate(forEMD.begin(), forEMD.end(), 0.0);
+		meanEuclDist = sum / forEMD.size();
+		transform(forEMD.begin(), forEMD.end(), diff.begin(), [meanEuclDist](double x) { return x - meanEuclDist; });
+		sdEuclDist = sqrt(inner_product(diff.begin(), diff.end(), diff.begin(), 0.0) / forEMD.size()); //Standard deviation of points from saliency map
+
 		signature_t s1 = {k_pixels, forEMD, weights};
 		signature_t s2 = {k_pixels, forEMD2, weights};
 
 		curEMD = emd(&s1, &s2, VOCUS_ROS::dist, NULL, NULL);
-		cout<< ">>>EMD:" << curEMD << ", Class:" << detectron2_result->class_names[i]<< endl;
+		//cout<< ">>>EMD:" << curEMD << ", Class:" << detectron2_result->class_names[i]<< endl;
 
 		float temp = (accumulate(forEMD2.begin(),forEMD2.end(),0))/k_pixels;
 		eudDistanceforFixation.push_back(temp);
-		cout << "temp: "<< temp << endl;
+		//cout << "temp: "<< temp << endl;
 
 		if (curEMD < minEMD){
 			minEMD = curEMD;
+			minSDforSalmap = sdEuclDist;
 			finalVerdict_EMD.s = detectron2_result->class_names[i];
 			nums.data = curEMD;
 		}
@@ -970,16 +964,19 @@ void VOCUS_ROS::imageCb_MaskRCNN(const sensor_msgs::ImageConstPtr& msg, const vo
 		salmap.convertTo(salmap, CV_8UC1);
 		cv_ptr->image = salmap;
 		cv_ptr->encoding = sensor_msgs::image_encodings::MONO8;
-		ROS_INFO("SAL_PUB");
 		_image_sal_pub.publish(cv_ptr->toImageMsg());
 
 	}
 	//Set output to none if EMD is too high
-	if (minEMD>180) finalVerdict_EMD.s = "None";
+	if (minEMD>300) finalVerdict_EMD.s = "None";
+	if (minFixation>250) finalVerdict_fixation.s = "None";
 
 	//Published correct object into final verdict topic
 	bool edgeCase = isEdgeCase(detectron2_result, mean_X, mean_Y, withinMask, eudDistanceforFixation);
+	if (finalVerdict_fixation.s == "None") edgeCase = true;
 	true_finalVerdict.s = (edgeCase)? finalVerdict_EMD.s : finalVerdict_fixation.s;
+	true_finalVerdict.isEdgeCase = edgeCase;
+	true_finalVerdict.class_names =  detectron2_result->class_names;
 
 	finalVerdict_EMD.header.stamp = ros::Time::now();
 	finalVerdict_fixation.header.stamp = ros::Time::now();
@@ -989,6 +986,7 @@ void VOCUS_ROS::imageCb_MaskRCNN(const sensor_msgs::ImageConstPtr& msg, const vo
 	_final_verdict_fixation_pub.publish(finalVerdict_fixation);
 	_true_final_verdict_pub.publish(true_finalVerdict);
 
+	cout << "--------------------------------------------------------" << endl;
 	cout << "EMD verdict: " << finalVerdict_EMD.s << ", " << nums.data << endl;
 	cout << "Fixation verdict: " << finalVerdict_fixation.s << endl;
 	cout << "Final verdict: " << true_finalVerdict.s << endl;
@@ -996,10 +994,10 @@ void VOCUS_ROS::imageCb_MaskRCNN(const sensor_msgs::ImageConstPtr& msg, const vo
 	std_msgs::String msg_truth;
     std::stringstream ss;
 	if (finalVerdict_EMD.s == finalVerdict_fixation.s){
-		ss << myCount++ << " True; "<< finalVerdict_EMD.s << ", " << finalVerdict_fixation.s << ", Edge Case: " << edgeCase;
+		ss << myCount++ << " True; "<< finalVerdict_EMD.s << ", " << finalVerdict_fixation.s << ", Edge Case: " << edgeCase << " , SD: " << minSDforSalmap;
 	}
 	else {
-		ss << myCount++ << " False; " << finalVerdict_EMD.s << ", " << finalVerdict_fixation.s << ", Edge Case: " << edgeCase;
+		ss << myCount++ << " False; " << finalVerdict_EMD.s << ", " << finalVerdict_fixation.s << ", Edge Case: " << edgeCase << " , SD: " << minSDforSalmap;
 	}
 	msg_truth.data = ss.str();
 	_truth_pub.publish(msg_truth);
@@ -1076,12 +1074,14 @@ float VOCUS_ROS::dist(int F1, int F2){
 }
 
 bool VOCUS_ROS::isEdgeCase(const vocus2_ros::Result_Detectron2ConstPtr& detectron2_result, int x, int y, vector<bool>& withinMask, vector<float>& eucDistforFixation){
-	for (int i =0; i < withinMask.size(); i++){
-		cout << withinMask[i]<< endl;
-	}
+	// for (int i =0; i < withinMask.size(); i++){
+	// 	cout << withinMask[i]<< endl;
+	// }
 	//First Check: Check if gaze point of min euclidean distances is within the corresponding mask
+	if (withinMask.size() == 0) return false;
+		
 	if (withinMask[std::distance(eucDistforFixation.begin(), std::min_element(eucDistforFixation.begin(),eucDistforFixation.end()))] == false){ 
-		cout << "edgeCase Case 1" << endl;
+		// cout << "edgeCase Case 1" << endl;
 		return true;
 	}
 
@@ -1089,7 +1089,7 @@ bool VOCUS_ROS::isEdgeCase(const vocus2_ros::Result_Detectron2ConstPtr& detectro
 	int count = 0; //No of overlaps, return true if count >=2
 	float tolerance = 0.1; // 10% Tolerance
 	for (uint i=0; i< detectron2_result->boxes.size(); i++){
-		if (detectron2_result->class_names[i] == "dining table") continue;
+		if (find(objectToCheck.begin(),objectToCheck.end(),detectron2_result->class_names[i]) == objectToCheck.end()) continue;
 		int xmin = detectron2_result->boxes[i].x_offset; //Top left is origin
 		int ymin = detectron2_result->boxes[i].y_offset;
 		int height = detectron2_result->boxes[i].height;
@@ -1100,8 +1100,25 @@ bool VOCUS_ROS::isEdgeCase(const vocus2_ros::Result_Detectron2ConstPtr& detectro
 		int new_ymin = ymin - height*tolerance;
 		int new_xmax = xmin + width + width*tolerance;
 		int new_ymax = ymin + height + height*tolerance;
-		if ((x>new_xmin && x < new_xmax) && (y>new_ymin && y< new_ymax)) count++;
-		if (count >=2) return true;
+
+		if ((x>new_xmin && x < new_xmax) && (y>new_ymin && y< new_ymax)){
+			cv_bridge::CvImagePtr cv_mask_ptr;
+			Mat mask_img;
+			try 
+			{	
+				cv_mask_ptr = cv_bridge::toCvCopy(detectron2_result->masks[i]);
+			}
+			catch (cv_bridge::Exception& e)
+			{
+				ROS_ERROR("cv_bridge exception during edge case detection: %s", e.what());
+			}
+			mask_img = cv_mask_ptr->image;
+			dilate(mask_img,mask_img,cv::getStructuringElement(MORPH_RECT,cv::Size(50,50)));
+			if(mask_img.at<uchar>(y,x)) count++; //NumpyArray -> [Rows][Cols]
+			if (count >=2) {
+				return true;
+			}
+		}
 	}
 	return false;
 }

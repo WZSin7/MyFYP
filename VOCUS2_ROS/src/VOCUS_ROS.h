@@ -95,10 +95,11 @@ private:
   typedef message_filters::sync_policies::ApproximateTime<sensor_msgs::Image, vocus2_ros::Result_Detectron2, vocus2_ros::GazeInfoBino_Array> MaskRCNN_Policy;
 	typedef message_filters::Synchronizer<MaskRCNN_Policy> Sync_MaskRCNN; 
   boost::shared_ptr<Sync_MaskRCNN> sync_MaskRCNN;
-  bool useThres = true; //Use threshold / fixed l_pixels value
+  bool useThres = false; //Use threshold / fixed l_pixels value
   int k_pixels = 30; //User defined
   bool useMaskRCNN = true;
   int myCount = 1;
+  vector<string> objectToCheck = {"cup","bottle","mouse"};
 
   image_geometry::PinholeCameraModel _cam;
 
