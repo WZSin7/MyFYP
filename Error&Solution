@@ -1,0 +1,20 @@
+1) nvcc fatal   : Unsupported gpu architecture 'compute_30' [For Cuda 11.1]
+Go to 'catkin_ws/src/darknet_ros/darknet_ros', open CMakeLists.txt 
+Under CUDA_NVCC_Flags add "-Wno-deprecated-gpu-targets", remove no. below 52
+
+2) error: no matching function for call to ‘_IplImage::_IplImage(cv::Mat&)’ 
+[IplImage is an old image format for Opencv, replaced by mat]
+  IplImage* ROS_img = new IplImage(camImageCopy_); //Error , (camImageCopy_ is a cv::mat)
+  IplImage ROS_img = cvIplImage(camImageCopy_); //Changed to this
+ROS_img is now a object so all old ROS_img(pointer) needs to be changed to &ROS_img
+
+3) Import Error: Dynamic module does not define module export function (Pylint_cv_bridge_boost)
+Download and build 'cvbridge_build_ws' from https://cyaninfinite.com/ros-cv-bridge-with-python-3/
+Need to source it whenever in use
+
+
+
+Progress Update
+-How to sync pupil gaze with YOLO BBoxes
+-Moving vs Non-Moving object //What Marcus mentioned [Also in Paper]
+

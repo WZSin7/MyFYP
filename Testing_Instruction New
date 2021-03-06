@@ -1,0 +1,16 @@
+Testing setup instruction
+1) Terminal > source myFYP/bin/activate > cd pupil/pupil_src >python main.py capture
+
+2) Terminal > roscore
+
+3) Terminal > source myFYP/bin/activate > cd cv_bridge (source install/setup.bash --extend) > cd catkin_ws (source devel/setup.bash) > roslaunch myPupilLab fulleyegaze.launch
+
+4) Terminal > source detectron2_ros/bin/activate > cd cv_bridge (source install/setup.bash --extend) > cd catkin_ws (source devel/setup.bash) > roslaunch detectron2_ros detectron2_ros.launch
+
+5) Terminal > cd catkin_ws (source devel/setup.bash) > rostopic echo /truth
+
+6) Terminal > cd catkin_ws (source devel/setup.bash) > roslaunch myPupilLab tabulate.launch
+
+7) Terminal > cd catkin_ws (source devel/setup.bash) > rosparam set /configDone true > rosparam set /groundTruth xxx
+
+Video Recording with 5,6,7 on screen
