@@ -774,13 +774,6 @@ void VOCUS_ROS::imageCb_MaskRCNN(const sensor_msgs::ImageConstPtr& msg, const vo
 		if (mask_img.at<uchar>(mean_Y,mean_X) != 0) withinMask.push_back(true); //For determining edge cases
 		else withinMask.push_back(false);
 
-		//Apply mask to image, so that background of the mask is filtered
-		mask_img = mask_img(Rect(xmin, ymin, width, height))/255; 
-		Mat mask_img_3c[] = {mask_img, mask_img, mask_img};
-		merge(mask_img_3c, 3, mask_img); //Mask is 1 channel, merge 3 masks into 1 " 3 channel mask" then do element-wise multiplication
-		img = img.mul(mask_img);
-
-
 		Mat salmap;
 		_vocus.process(img);
 
@@ -850,6 +843,11 @@ void VOCUS_ROS::imageCb_MaskRCNN(const sensor_msgs::ImageConstPtr& msg, const vo
 		int cols = s.width;
 		int l_pixels;
 
+		//Apply mask to image, so that background of the mask is filtered
+		mask_img = mask_img(Rect(xmin, ymin, width, height))/255;
+		mask_img.convertTo(mask_img,CV_32F); //Mask is CV_8UC1 (Type 0), Salmap Output is CV_32FC1 (Type 5)
+		salmap = salmap.mul(mask_img);
+
 		if (useThres){ //Use threshold (Changed in VOCUS_ROS.h)
 			float threshold = 0.8;
 			//int l_pixels; //User defined
@@ -910,21 +908,26 @@ void VOCUS_ROS::imageCb_MaskRCNN(const sensor_msgs::ImageConstPtr& msg, const vo
 		float sample, curEMD;
 		vector<int> forEMD, forEMD2;
 		vector<float> weights;
+		vector<int> usedID;
+		int idx;
 		float meanEuclDist,meanEuclDist_gaze, sdEuclDist, sdEuclDist_gaze;
 		std::normal_distribution<float> d(mean, sd);
 		for(int i = 0; i<k_pixels; i++){
 			while(true){
 				sample = d(gen);
-				if(sample >= storage[0].intensity) break; //Retry until obtained intensity >= to min
+				if(sample < storage[0].intensity) continue; //Retry until obtained intensity >= to min
+				idx = findClosestID(storage,l_pixels,sample);
+				if (find(usedID.begin(),usedID.end(),idx) == usedID.end()){
+					usedID.push_back(idx);
+					break;
+				}
 			}
-			int idx = findClosestID(storage,l_pixels,sample);
 			finalValues temp;
 			temp.row = storage[idx].row;
 			temp.col = storage[idx].col;
 			temp.euclideanDistance = calcDistance(temp.row,temp.col,rows/2,cols/2);
 			forEMD.push_back(temp.euclideanDistance);
 
-			//cout << "curX: " << corrected_X[i] <<", curY: "<< corrected_Y[i] << endl;
 			forEMD2.push_back(calcDistance(corrected_X[i]*1280-1, (1-corrected_Y[i])*720-1, (xmin+width/2), (ymin+height/2))); //Bottom Left is origin[myarray], Top Left is origin[bboxes]
 			weights.push_back(1);
 		}
@@ -1113,7 +1116,7 @@ bool VOCUS_ROS::isEdgeCase(const vocus2_ros::Result_Detectron2ConstPtr& detectro
 				ROS_ERROR("cv_bridge exception during edge case detection: %s", e.what());
 			}
 			mask_img = cv_mask_ptr->image;
-			dilate(mask_img,mask_img,cv::getStructuringElement(MORPH_RECT,cv::Size(50,50)));
+			dilate(mask_img,mask_img,cv::getStructuringElement(MORPH_RECT,cv::Size(25,25)));
 			if(mask_img.at<uchar>(y,x)) count++; //NumpyArray -> [Rows][Cols]
 			if (count >=2) {
 				return true;
