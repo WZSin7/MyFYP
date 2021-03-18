@@ -11,7 +11,8 @@ using namespace message_filters;
 using namespace std;
 
 //Global variables
-int emd_true = 0, emd_false=0, fixation_true=0, fixation_false=0, final_true=0, final_false=0, totalEdgeCase =0, totalCorrectEdgeCase =0, totalError = 0;
+int emd_true = 0, emd_false=0, fixation_true=0, fixation_false=0, final_true=0, final_false=0, totalEdgeCase =0, totalCorrectEdgeCase =0, totalError = 0, totalError2 = 0;
+int correct_Fix =0, correct_Combine =0, wrong_Fix = 0, wrong_Combine = 0;
 
 void callback(const myPupilLab::ResultConstPtr& EMD, const myPupilLab::ResultConstPtr& fixation, const myPupilLab::ResultConstPtr& final){
 	std::string currentTruth;
@@ -30,6 +31,18 @@ void callback(const myPupilLab::ResultConstPtr& EMD, const myPupilLab::ResultCon
 
 			auto ptr = find(begin(final->class_names),end(final->class_names),currentTruth);
 			if(ptr == end(final->class_names)) totalError++;
+
+			auto ptr1 = find(begin(final->class_names),end(final->class_names),"bottle");
+			auto ptr2 = find(begin(final->class_names),end(final->class_names),"cup");
+			auto ptr3 = find(begin(final->class_names),end(final->class_names),"mouse");
+			if(ptr1 == end(final->class_names)||ptr2 == end(final->class_names)||ptr3 == end(final->class_names)){
+				totalError2++;
+				if(fixation->s == currentTruth) correct_Fix++;
+				else wrong_Fix++;
+
+				if(final->s == currentTruth) correct_Combine++;
+				else wrong_Combine++;
+			}
 
 			if(final->isEdgeCase == true && ptr != end(final->class_names)){
 				totalEdgeCase++;
@@ -53,6 +66,9 @@ void callback(const myPupilLab::ResultConstPtr& EMD, const myPupilLab::ResultCon
 
 
 			cout << "No. of error in Mask-RCNN detection: " << totalError<< endl;
+			cout << "Incomplete detection error: " << totalError2<< endl;
+			cout << "Error caused by incomplete detection for fixation: " << wrong_Fix << endl;
+			cout << "Error caused by incomplete detection for combine: " << wrong_Combine<< endl;
 			cout << endl;
 
 			cout << "Total Edge Case detected: " << totalEdgeCase << endl;

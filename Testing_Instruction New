@@ -1,5 +1,5 @@
 Testing setup instruction
-1) Terminal > source myFYP/bin/activate > cd pupil/pupil_src >python main.py capture
+1) Terminal > source myFYP/bin/activate (finalPupil) > cd pupil/pupil_src (pupil2/pupil/pupil_src) >python main.py capture
 
 2) Terminal > roscore
 

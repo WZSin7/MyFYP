@@ -40,10 +40,10 @@ def gaze_parser_bino(message):
 	
 	outmsg = GazeInfoBino()
 
-	outmsg.eye_centers_3d_0 = message[b'eye_centers_3d'][b'0']
-	outmsg.eye_centers_3d_1 = message[b'eye_centers_3d'][b'1']
-	outmsg.gaze_normals_3d_0 = message[b'gaze_normals_3d'][b'0']
-	outmsg.gaze_normals_3d_1 = message[b'gaze_normals_3d'][b'1']
+	outmsg.eye_centers_3d_0 = message[b'eye_centers_3d'][0]
+	outmsg.eye_centers_3d_1 = message[b'eye_centers_3d'][1]
+	outmsg.gaze_normals_3d_0 = message[b'gaze_normals_3d'][0]
+	outmsg.gaze_normals_3d_1 = message[b'gaze_normals_3d'][1]
 	outmsg.gaze_point_3d = message[b'gaze_point_3d']
 	outmsg.norm_pos = message[b'norm_pos']
 	outmsg.confidence = message[b'confidence']
