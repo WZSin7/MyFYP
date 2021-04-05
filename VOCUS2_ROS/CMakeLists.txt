@@ -34,6 +34,7 @@ add_message_files(
    GazeInfoBino_Array.msg
    Result.msg
    Result_Detectron2.msg
+   forDemo.msg
  )
 
 ## Generate added messages and services with any dependencies listed here

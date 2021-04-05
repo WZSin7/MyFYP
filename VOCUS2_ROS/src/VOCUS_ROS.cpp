@@ -33,6 +33,7 @@
 #include <vocus2_ros/GazeInfoBino_Array.h>
 #include <vocus2_ros/Result.h>
 #include <vocus2_ros/Result_Detectron2.h>
+#include <vocus2_ros/forDemo.h>
 
 #include "std_msgs/String.h"
 #include <std_msgs/Int16.h>
@@ -71,6 +72,7 @@ VOCUS_ROS::VOCUS_ROS() : _it(_nh) //Constructor [assign '_nh' to '_it']
 	_final_verdict_EMD_pub = _nh.advertise<vocus2_ros::Result>("final_verdict_EMD",10);
 	_final_verdict_fixation_pub = _nh.advertise<vocus2_ros::Result>("final_verdict_fixation",10);
 	_true_final_verdict_pub = _nh.advertise<vocus2_ros::Result>("final_verdict_true",10);
+	_for_demo_pub = _nh.advertise<vocus2_ros::forDemo>("forDemo",1);
 	_truth_pub = _nh.advertise<std_msgs::String>("truth",10);
 }
 
@@ -988,6 +990,40 @@ void VOCUS_ROS::imageCb_MaskRCNN(const sensor_msgs::ImageConstPtr& msg, const vo
 	_final_verdict_EMD_pub.publish(finalVerdict_EMD);
 	_final_verdict_fixation_pub.publish(finalVerdict_fixation);
 	_true_final_verdict_pub.publish(true_finalVerdict);
+
+	// For Demo code **********************************************************************************************************
+
+	if (startNewTimer){ //For beginning or after latest publish
+		start = getTickCount();
+		startNewTimer = false;
+	}
+	int currentObjectID;
+	for (int i =0; i< objectToCheck.size();i++){
+		if(true_finalVerdict.s == objectToCheck[i]) currentObjectID = i;
+	}
+	if (idOfLastObject!=99){
+		if(idOfLastObject == currentObjectID){
+			long long stop = getTickCount();
+			double elapsed_time = (stop-start)/getTickFrequency();
+			if (elapsed_time >=5){
+				vocus2_ros::forDemo confirmedObject;
+				confirmedObject.id = idOfLastObject;
+				confirmedObject.header.stamp = ros::Time::now();
+				_for_demo_pub.publish(confirmedObject);
+				startNewTimer = true; //reset back to default
+				idOfLastObject = 99; //reset back to default
+			}
+		}
+		else{
+			idOfLastObject = currentObjectID; //Update the new ID
+			start = getTickCount(); //Update Starting time
+		}
+	}
+	else{ //The beginning
+		idOfLastObject = currentObjectID;
+	}
+
+    // End of for Demo code ****************************************************************************************************
 
 	cout << "--------------------------------------------------------" << endl;
 	cout << "EMD verdict: " << finalVerdict_EMD.s << ", " << nums.data << endl;

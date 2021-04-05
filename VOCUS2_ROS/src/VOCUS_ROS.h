@@ -43,6 +43,7 @@ public:
     int col;
     int euclideanDistance;
   };
+
   
     // this sets VOCUS's own configuration object's settings to the one given in the ROS configuration 
     // coming from the dynamic_reconfigure module
@@ -83,7 +84,7 @@ private:
   ros::Subscriber _cam_sub;
   image_transport::Publisher _image_pub;
   image_transport::Publisher _image_sal_pub;
-  ros::Publisher _poi_pub, _final_verdict_EMD_pub, _final_verdict_fixation_pub, _truth_pub, _true_final_verdict_pub;
+  ros::Publisher _poi_pub, _final_verdict_EMD_pub, _final_verdict_fixation_pub, _truth_pub, _true_final_verdict_pub, _for_demo_pub;
   message_filters::Subscriber<sensor_msgs::Image> image_sub;
 	message_filters::Subscriber<vocus2_ros::BoundingBoxes> bboxes_sub;
   message_filters::Subscriber<vocus2_ros::GazeInfoBino_Array> array_sub;
@@ -99,7 +100,12 @@ private:
   int k_pixels = 30; //User defined
   bool useMaskRCNN = true;
   int myCount = 1;
-  vector<string> objectToCheck = {"cup","bottle","mouse"};
+  vector<string> objectToCheck = {"cup","bottle","mouse"}; //EDIT THIS!!!
+
+ // For demo
+  long long start;
+  bool startNewTimer = true;
+  int idOfLastObject = 99;
 
   image_geometry::PinholeCameraModel _cam;
 
