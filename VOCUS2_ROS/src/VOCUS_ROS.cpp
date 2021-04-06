@@ -997,7 +997,7 @@ void VOCUS_ROS::imageCb_MaskRCNN(const sensor_msgs::ImageConstPtr& msg, const vo
 		start = getTickCount();
 		startNewTimer = false;
 	}
-	int currentObjectID;
+	int currentObjectID = 98;
 	for (int i =0; i< objectToCheck.size();i++){
 		if(true_finalVerdict.s == objectToCheck[i]) currentObjectID = i;
 	}
@@ -1005,22 +1005,30 @@ void VOCUS_ROS::imageCb_MaskRCNN(const sensor_msgs::ImageConstPtr& msg, const vo
 		if(idOfLastObject == currentObjectID){
 			long long stop = getTickCount();
 			double elapsed_time = (stop-start)/getTickFrequency();
-			if (elapsed_time >=5){
+			cout << "********************************************************" << endl;
+			cout << "Elapsed_Time: " << elapsed_time << endl;
+			cout << "Current Selection : " << currentObjectID << ", " << objectToCheck[currentObjectID] << endl;
+			if (elapsed_time >= timerForRegistration){
 				vocus2_ros::forDemo confirmedObject;
 				confirmedObject.id = idOfLastObject;
 				confirmedObject.header.stamp = ros::Time::now();
 				_for_demo_pub.publish(confirmedObject);
+				cout << "Published: " << objectToCheck[confirmedObject.id] << endl;
 				startNewTimer = true; //reset back to default
 				idOfLastObject = 99; //reset back to default
 			}
+			cout << "********************************************************" << endl;
 		}
 		else{
-			idOfLastObject = currentObjectID; //Update the new ID
-			start = getTickCount(); //Update Starting time
+			if(currentObjectID != 98){
+				idOfLastObject = currentObjectID; //Update the new ID
+				start = getTickCount(); //Update Starting time
+			}
+			else idOfLastObject = 99; //Reset
 		}
 	}
 	else{ //The beginning
-		idOfLastObject = currentObjectID;
+		if(currentObjectID != 98) idOfLastObject = currentObjectID;
 	}
 
     // End of for Demo code ****************************************************************************************************

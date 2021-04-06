@@ -106,6 +106,7 @@ private:
   long long start;
   bool startNewTimer = true;
   int idOfLastObject = 99;
+  int timerForRegistration = 5;
 
   image_geometry::PinholeCameraModel _cam;
 
