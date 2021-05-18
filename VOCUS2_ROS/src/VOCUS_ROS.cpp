@@ -1029,6 +1029,7 @@ void VOCUS_ROS::imageCb_MaskRCNN(const sensor_msgs::ImageConstPtr& msg, const vo
 	}
 	else{ //The beginning
 		if(currentObjectID != 98) idOfLastObject = currentObjectID;
+		startNewTimer = true;
 	}
 
     // End of for Demo code ****************************************************************************************************

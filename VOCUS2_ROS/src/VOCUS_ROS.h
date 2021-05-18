@@ -100,13 +100,13 @@ private:
   int k_pixels = 30; //User defined
   bool useMaskRCNN = true;
   int myCount = 1;
-  vector<string> objectToCheck = {"cup","bottle","mouse"}; //EDIT THIS!!!
+  vector<string> objectToCheck = {"bottle","bowl","cup"}; //EDIT THIS!!!
 
  // For demo
   long long start;
   bool startNewTimer = true;
   int idOfLastObject = 99;
-  int timerForRegistration = 5;
+  int timerForRegistration = 3;
 
   image_geometry::PinholeCameraModel _cam;
 
